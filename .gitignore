@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.Python
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Streamlit
+streamlit.log
+.streamlit/secrets.toml
+
+# Secrets / env
+.env
+*.key
+
+# OS
+.DS_Store
+
+# Uploaded / generated files
+*.xlsm
+*.xlsx
