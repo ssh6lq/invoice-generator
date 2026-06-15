@@ -13,15 +13,35 @@
 
 ## 설치
 
+가상환경(venv)을 만들어 의존 패키지를 설치하는 것을 권장합니다.
+
 ```bash
+python3 -m venv .venv          # 가상환경 생성 (최초 1회)
+source .venv/bin/activate      # 가상환경 활성화 (Windows: .venv\Scripts\activate)
 pip install -r requirements.txt
 ```
 
-## 실행
+## 서버 실행
 
 ```bash
+source .venv/bin/activate      # 활성화 안 돼 있으면
 streamlit run app.py
 ```
+
+실행하면 기본적으로 http://localhost:8501 에서 앱이 열립니다.
+
+## 서버 종료
+
+- **포그라운드 실행(터미널이 앱에 묶인 경우)**: 해당 터미널에서 `Ctrl + C`
+- **백그라운드로 실행한 경우**: 포트로 프로세스를 찾아 종료
+
+  ```bash
+  lsof -ti:8501 | xargs kill        # macOS / Linux
+  ```
+
+작업이 끝나면 `deactivate` 로 가상환경을 빠져나올 수 있습니다.
+
+---
 
 브라우저가 열리면:
 
