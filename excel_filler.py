@@ -20,7 +20,11 @@ from datetime import datetime, date, time
 from io import BytesIO
 from xml.sax.saxutils import escape
 
+import openpyxl
+
 SHEET_NAME = "작성시트"
+CLAIM_SHEET = "비용청구서"   # 기초정보(소속/성명/카드/제목)·서명 상태가 들어가는 시트
+SUPPORT_SHEET = "비용지원안내"  # 목적별 지원한도 안내 시트
 FIRST_DATA_ROW = 15        # 실제 데이터 시작 행
 EXCEL_EPOCH = date(1899, 12, 30)
 
@@ -142,13 +146,63 @@ def _build_cell(coord, style, kind, value):
     raise ValueError(kind)
 
 
+def _insert_cell(xml: str, coord: str, cell_xml: str) -> str:
+    """XML 에 없는 셀을 해당 행의 올바른 열 위치(컬럼 순서)에 삽입한다.
+    행이 없으면 행 자체를 행 번호 순서에 맞게 새로 만든다."""
+    row = int(re.search(r"\d+", coord).group(0))
+    col_idx = _col_to_idx(re.match(r"[A-Z]+", coord).group(0))
+
+    rm = re.search(r'<row r="%d"(?:\s+[^>]*?)?>(.*?)</row>' % row, xml, re.S)
+    if rm:
+        inner = rm.group(1)
+        pos = len(inner)  # 기본: 행 끝
+        for cm in re.finditer(r'<c r="([A-Z]+)\d+"', inner):
+            if _col_to_idx(cm.group(1)) > col_idx:
+                pos = cm.start()
+                break
+        new_inner = inner[:pos] + cell_xml + inner[pos:]
+        return xml[:rm.start(1)] + new_inner + xml[rm.end(1):]
+
+    # self-closing <row r="N"/> 형태
+    rm2 = re.search(r'<row r="%d"((?:\s+[^>]*?)?)/>' % row, xml)
+    if rm2:
+        replacement = f'<row r="{row}"{rm2.group(1)}>{cell_xml}</row>'
+        return xml[:rm2.start()] + replacement + xml[rm2.end():]
+
+    # 행 자체가 없으면 행 번호 순서를 지켜 새 행 삽입
+    new_row = f'<row r="{row}">{cell_xml}</row>'
+    for rm3 in re.finditer(r'<row r="(\d+)"', xml):
+        if int(rm3.group(1)) > row:
+            return xml[:rm3.start()] + new_row + xml[rm3.start():]
+    return xml.replace("</sheetData>", new_row + "</sheetData>", 1)
+
+
 def _set_cell(xml: str, coord: str, kind: str, value) -> str:
     blk = _cell_block(xml, coord)
     if blk is None:
-        raise ValueError(f"셀 {coord} 을(를) 찾을 수 없습니다 (양식 범위 초과).")
+        # 빈 셀이라 XML 에 없으면 새로 삽입
+        return _insert_cell(xml, coord, _build_cell(coord, None, kind, value))
     start, end, style, _ = blk
     new = _build_cell(coord, style, kind, value)
     return xml[:start] + new + xml[end:]
+
+
+def _force_full_recalc(workbook_xml: str) -> str:
+    """xl/workbook.xml 의 <calcPr> 에 fullCalcOnLoad="1" 을 넣어,
+    파일을 열 때 엑셀이 모든 수식을 강제로 재계산하게 한다.
+    (값 셀만 직접 교체하면 수식 셀의 캐시값이 그대로 남아 재계산되지 않는다.)"""
+    m = re.search(r"<calcPr\b[^>]*/>", workbook_xml)
+    if m:
+        tag = m.group(0)
+        if "fullCalcOnLoad" in tag:
+            tag = re.sub(r'fullCalcOnLoad="[^"]*"', 'fullCalcOnLoad="1"', tag)
+        else:
+            tag = tag[:-2] + ' fullCalcOnLoad="1"/>'
+        return workbook_xml[:m.start()] + tag + workbook_xml[m.end():]
+    # calcPr 가 없으면 sheets 뒤에 삽입 (calcPr 는 sheets 다음 위치).
+    # <sheets>...</sheets> 와 자체닫힘 <sheets/> 둘 다 처리.
+    return re.sub(r"(</sheets>|<sheets\b[^>]*/>)",
+                  r'\1<calcPr fullCalcOnLoad="1"/>', workbook_xml, count=1)
 
 
 def _first_empty_row(xml: str) -> int:
@@ -259,14 +313,54 @@ def get_dropdown_options(src_path_or_bytes):
     return {"purpose": purpose, "payment": payment}
 
 
+def get_support_limits(src_path_or_bytes):
+    """
+    '비용지원안내' 시트에서 목적(B)별 지원한도(F) 를 읽어 매핑을 만든다.
+    반환: {목적명: 한도(int, 원) 또는 None}
+          F 칸이 '승인금액' 등 정액이 아니면 None(상한 없음).
+          범위(예: '5,500 ~11,000원')는 상한값(최댓값)을 사용.
+    """
+    raw = _read_bytes(src_path_or_bytes)
+    wb = openpyxl.load_workbook(BytesIO(raw), data_only=True)
+    if SUPPORT_SHEET not in wb.sheetnames:
+        return {}
+    ws = wb[SUPPORT_SHEET]
+
+    # 지원한도(F)는 조식/중식/석식처럼 여러 목적이 한 칸을 공유(병합)한다.
+    # 병합 구간의 앵커 값을 각 행으로 펼쳐 둔다.
+    merged_f = {}
+    for mr in ws.merged_cells.ranges:
+        if mr.min_col <= 6 <= mr.max_col:
+            anchor = ws.cell(mr.min_row, mr.min_col).value
+            for rr in range(mr.min_row, mr.max_row + 1):
+                merged_f[rr] = anchor
+
+    limits = {}
+    for r in range(5, ws.max_row + 1):
+        purpose = ws.cell(r, 2).value          # B: 목적
+        if not purpose:
+            continue
+        cap_text = str(merged_f.get(r) if r in merged_f else ws.cell(r, 6).value or "")
+        nums = [int(x.replace(",", "")) for x in re.findall(r"[\d,]*\d", cap_text)]
+        # 금액으로 볼 만한 값(>=1000)만 한도로 인정. 없으면 상한 없음(None)
+        amounts = [n for n in nums if n >= 1000]
+        limits[str(purpose).strip()] = max(amounts) if amounts else None
+    return limits
+
+
 # ---------------------------------------------------------------- 메인
-def fill_workbook(src_path_or_bytes, records, append=True):
+def fill_workbook(src_path_or_bytes, records, append=True, basic_info=None):
     """
     영수증 레코드를 워크북에 채워 BytesIO 로 반환한다.
     원본의 도형/이미지/매크로/서식을 100% 보존한다.
 
-    records: list[dict]  키 = date, store, purpose, amount, payment, time
+    records: list[dict]  키 = date, store, purpose, amount, payment, time,
+             claim_amount(청구금액 H), region(지역 K), participants(참여자 L), note(비고 M)
     append : True 면 기존 데이터 다음 빈 행부터, False 면 15행부터
+    basic_info: dict  '기초정보입력' 매크로가 비용청구서 시트에 채우는 값을 대신 기록.
+             dept(소속 H5), name(성명 H6), card(법인카드번호 H7),
+             title(청구 항목명 -> B2 "{title}청구서"). name 이 있으면 본인확인(I3)을
+             '서명완료', 매크로검토(I9)를 '필요' 로 세팅해 엑셀에서 매크로검토만 누르면 되게 한다.
     반환    : (BytesIO, start_row, count)
     """
     raw = _read_bytes(src_path_or_bytes)
@@ -274,13 +368,31 @@ def fill_workbook(src_path_or_bytes, records, append=True):
     sheet_path = _sheet_path_for(zin, SHEET_NAME)
     xml = zin.read(sheet_path).decode("utf-8")
 
+    # 기초정보 + 서명/상태 (비용청구서 시트) — 매크로 '기초정보입력' 대체
+    bi = basic_info or {}
+    claim_path, claim_xml = None, None
+    if any(bi.get(k) for k in ("dept", "name", "card", "title")):
+        claim_path = _sheet_path_for(zin, CLAIM_SHEET)
+        claim_xml = zin.read(claim_path).decode("utf-8")
+        claim_xml = _set_cell(claim_xml, "H5", "str", str(bi.get("dept", "") or "").strip())
+        claim_xml = _set_cell(claim_xml, "H6", "str", str(bi.get("name", "") or "").strip())
+        claim_xml = _set_cell(claim_xml, "H7", "str", str(bi.get("card", "") or "").strip())
+        title = str(bi.get("title", "") or "").strip()
+        if title:
+            claim_xml = _set_cell(claim_xml, "B2", "str", f"{title}청구서")
+        # 본인확인(I3)·매크로검토(I9) 상태: 이름이 있으면 서명완료 처리
+        if str(bi.get("name", "") or "").strip():
+            claim_xml = _set_cell(claim_xml, "I3", "str", "서명완료")
+        claim_xml = _set_cell(claim_xml, "I9", "str", "필요")
+
     start = _first_empty_row(xml) if append else FIRST_DATA_ROW
 
     for i, rec in enumerate(records):
         r = start + i
         d = _to_date(rec.get("date"))
         if d is not None:
-            xml = _set_cell(xml, f"C{r}", "num", _date_serial(d))
+            # 매크로가 영수일자를 문자열로 비교(< "2026-01-01")하므로 YYYY-MM-DD 텍스트로 기록
+            xml = _set_cell(xml, f"C{r}", "str", d.isoformat())
         store = rec.get("store")
         if store:
             xml = _set_cell(xml, f"D{r}", "str", str(store).strip())
@@ -296,6 +408,19 @@ def fill_workbook(src_path_or_bytes, records, append=True):
         t = _to_time(rec.get("time"))
         if t is not None:
             xml = _set_cell(xml, f"J{r}", "num", repr(_time_fraction(t)))
+        # 추가 입력칸: 청구금액(H)·지역(K)·참여자(L)·비고(M)
+        claim = _to_amount(rec.get("claim_amount"))
+        if claim is not None:
+            xml = _set_cell(xml, f"H{r}", "num", claim)
+        region = rec.get("region")
+        if region:
+            xml = _set_cell(xml, f"K{r}", "str", str(region).strip())
+        participants = rec.get("participants")
+        if participants:
+            xml = _set_cell(xml, f"L{r}", "str", str(participants).strip())
+        note = rec.get("note")
+        if note:
+            xml = _set_cell(xml, f"M{r}", "str", str(note).strip())
 
     # 새 zip 작성 (대상 시트만 교체, 나머지 원본 그대로 복사)
     out = BytesIO()
@@ -304,6 +429,11 @@ def fill_workbook(src_path_or_bytes, records, append=True):
             data = zin.read(item.filename)
             if item.filename == sheet_path:
                 data = xml.encode("utf-8")
+            elif claim_path and item.filename == claim_path:
+                data = claim_xml.encode("utf-8")
+            elif item.filename == "xl/workbook.xml":
+                # 목적(E) 기반 안내 수식(I·N) 등이 열 때 재계산되도록
+                data = _force_full_recalc(data.decode("utf-8")).encode("utf-8")
             # 압축 방식/속성 보존
             zi = zipfile.ZipInfo(item.filename, date_time=item.date_time)
             zi.compress_type = item.compress_type

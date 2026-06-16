@@ -23,7 +23,7 @@ from io import BytesIO
 import openpyxl
 
 # excel_filler 의 범용 zip/XML 헬퍼 재사용
-from excel_filler import _read_bytes, _sheet_path_for, _set_cell
+from excel_filler import _read_bytes, _sheet_path_for, _set_cell, _force_full_recalc
 
 FORM_SHEET = "양식"
 STANDARD_WORK_SECONDS = 9 * 3600   # 정규근무 9시간(점심 포함)
@@ -51,6 +51,24 @@ def _parse_hms(v):
 
 def _fraction(seconds):
     return seconds / DAY_SECONDS
+
+
+def _set_hours_cell(xml, ref, val):
+    """대체휴무시간 칸: 'HH:MM' 이면 시간값(분수), 숫자면 숫자, 그 외엔 문자열로 기록.
+    빈값이면 그대로 둔다."""
+    if val is None:
+        return xml
+    s = str(val).strip()
+    if s == "":
+        return xml
+    if ":" in s:
+        sec = _parse_hms(s)
+        if sec is not None:
+            return _set_cell(xml, ref, "num", repr(_fraction(sec)))
+    try:
+        return _set_cell(xml, ref, "num", repr(float(s)))
+    except ValueError:
+        return _set_cell(xml, ref, "str", s)
 
 
 # ---------------------------------------------------------------- 근태 읽기
@@ -110,11 +128,16 @@ def parse_attendance(src_path_or_bytes):
 
 # ---------------------------------------------------------------- 양식 채우기
 def fill_overtime(template_path_or_bytes, attendance_path_or_bytes,
-                  name=None, month=None):
+                  name=None, month=None, extras=None):
     """
     근태현황을 읽어 연장근무신청서 양식을 채워 (BytesIO, count) 반환.
     name/month 를 직접 주면 근태 파일 값보다 우선한다.
+
+    extras: dict[int day] -> {"payoff": "O"/"X", "hours": "HH:MM"|숫자, "note": str}
+            사용자가 표에서 고른 대체휴무지급(P)·대체휴무시간(Q)·비고(R) 값.
+            (헤더는 15행, 일자별 데이터는 16+일자 행)
     """
+    extras = extras or {}
     a_name, a_year, a_month, records = parse_attendance(attendance_path_or_bytes)
     name = name or a_name
     month = month or a_month
@@ -132,7 +155,8 @@ def fill_overtime(template_path_or_bytes, attendance_path_or_bytes,
 
     # 일자별 행 채우기 (양식: 1일=17행, day -> 16+day)
     for rec in records:
-        r = 16 + rec["day"]
+        day = rec["day"]
+        r = 16 + day
         i_sec = rec["clock_in"] + STANDARD_WORK_SECONDS   # 근무시작 = 출근+9h
         j_sec = rec["clock_out"]                          # 근무종료 = 퇴근
         xml = _set_cell(xml, f"I{r}", "num", repr(_fraction(i_sec)))
@@ -140,12 +164,36 @@ def fill_overtime(template_path_or_bytes, attendance_path_or_bytes,
         xml = _set_cell(xml, f"L{r}", "num", repr(_fraction(i_sec)))  # 실 근무시작
         xml = _set_cell(xml, f"M{r}", "num", repr(_fraction(j_sec)))  # 실 근무종료
 
+        # 사용자가 표에서 고른 값: 대체휴무지급(P)·대체휴무시간(Q)·비고(R)
+        # 신청시간(S) 수식 = ROUNDDOWN(MAX(0,(근무시간) - N - Q)*2)/2 이고,
+        # P 가 안내문('입력하세요')이면 숫자 대신 안내문이 나온다.
+        #   X(대체휴무 미지급) -> P="X", Q 비움  -> 근무시간 전체가 신청시간에 기록
+        #   O(대체휴무 지급)   -> P="O", Q=대체휴무시간 -> 그만큼 신청시간에서 차감
+        ex = extras.get(day) or {}
+        payoff = str(ex.get("payoff", "") or "").strip().upper()
+        if payoff not in ("O", "X"):
+            payoff = "X"  # 기본: 대체휴무 미지급 → 전체 신청
+        xml = _set_cell(xml, f"P{r}", "str", payoff)
+
+        hours = str(ex.get("hours", "") or "").strip()
+        if payoff == "O" and hours:
+            xml = _set_hours_cell(xml, f"Q{r}", hours)
+        else:
+            xml = _set_cell(xml, f"Q{r}", "str", "")  # 비움 → 수식이 0으로 처리
+
+        note = str(ex.get("note", "") or "").strip()
+        if note:
+            xml = _set_cell(xml, f"R{r}", "str", note)
+
     out = BytesIO()
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zout:
         for item in zin.infolist():
             data = zin.read(item.filename)
             if item.filename == sheet_path:
                 data = xml.encode("utf-8")
+            elif item.filename == "xl/workbook.xml":
+                # 열 때 신청시간·지급시간 등 모든 수식을 강제 재계산
+                data = _force_full_recalc(data.decode("utf-8")).encode("utf-8")
             zi = zipfile.ZipInfo(item.filename, date_time=item.date_time)
             zi.compress_type = item.compress_type
             zi.external_attr = item.external_attr

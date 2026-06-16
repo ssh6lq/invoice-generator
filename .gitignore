@@ -23,3 +23,7 @@ streamlit.log
 # Uploaded / generated files
 *.xlsm
 *.xlsx
+
+# ...단, 앱에 번들되는 기본 양식은 추적한다
+!비용청구양식.xlsm
+!연장근무(수당)신청서_양식.xlsx
