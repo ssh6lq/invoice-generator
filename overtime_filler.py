@@ -128,10 +128,11 @@ def parse_attendance(src_path_or_bytes):
 
 # ---------------------------------------------------------------- 양식 채우기
 def fill_overtime(template_path_or_bytes, attendance_path_or_bytes,
-                  name=None, month=None, extras=None):
+                  name=None, month=None, extras=None, dept_position=None):
     """
     근태현황을 읽어 연장근무신청서 양식을 채워 (BytesIO, count) 반환.
     name/month 를 직접 주면 근태 파일 값보다 우선한다.
+    dept_position 을 주면 '부서명 / 직위' 칸(D7)에 채운다.
 
     extras: dict[int day] -> {"payoff": "O"/"X", "hours": "HH:MM"|숫자, "note": str}
             사용자가 표에서 고른 대체휴무지급(P)·대체휴무시간(Q)·비고(R) 값.
@@ -147,9 +148,11 @@ def fill_overtime(template_path_or_bytes, attendance_path_or_bytes,
     sheet_path = _sheet_path_for(zin, FORM_SHEET)
     xml = zin.read(sheet_path).decode("utf-8")
 
-    # 기본정보: 월(C2), 성명(D8)
+    # 기본정보: 월(C2), 부서명/직위(D7), 성명(D8)
     if month:
         xml = _set_cell(xml, "C2", "num", int(month))
+    if dept_position:
+        xml = _set_cell(xml, "D7", "str", str(dept_position).strip())
     if name:
         xml = _set_cell(xml, "D8", "str", name)
 
