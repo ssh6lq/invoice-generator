@@ -70,7 +70,9 @@ def _parse_receipts(payload, llm, on_progress=None):
                 SystemMessage(content=SYSTEM_PROMPT),
                 HumanMessage(content=[
                     {"type": "image_url", "image_url": {"url": data_url}},
-                    {"type": "text", "text": "이 영수증에서 정보를 추출해줘."},
+                    {"type": "text", "text": "이 영수증 이미지를 자세히 보고, 인쇄된 "
+                     "글자를 오타 없이 한 글자도 틀리지 않게 그대로 읽어 정보를 추출해줘. "
+                     "특히 상호명과 금액 숫자를 정확히."},
                 ]),
             ]
             r = llm.invoke(messages)
@@ -241,6 +243,8 @@ def inject_css(_t):
            기본 업로드 안내문(아이콘·Browse·용량)은 그대로 유지한다. */
         .st-key-receipt_box [data-testid="stFileChips"] { display: none !important; }
         .st-key-receipt_box [data-testid="stFileUploaderFile"] { display: none !important; }
+        /* 칩 목록을 숨기면서 딸려오는 'Showing page x of y' 페이지네이션도 숨김 */
+        .st-key-receipt_box [data-testid="stFileUploaderPagination"] { display: none !important; }
         /* 파일이 올라가 있어도 기본 안내문이 사라지지 않도록 강제로 표시 */
         .st-key-receipt_box [data-testid="stFileUploaderDropzoneInstructions"] {
             display: flex !important;
@@ -266,6 +270,80 @@ def inject_css(_t):
         .st-key-receipt_box [data-testid="stButton"] button:hover { color: #c0392b !important; }
         .st-key-receipt_box [data-testid="stButton"] {
             display: flex; align-items: center; min-height: 22px; background: transparent !important;
+        }
+
+        /* 영수증 미리보기 썸네일 — 클릭하면 새 탭에 원본 열림 */
+        .thumb-grid {
+            display: grid; grid-template-columns: repeat(3, 1fr);
+            gap: 10px; margin: .4rem 0 1rem;
+        }
+        .thumb {
+            display: flex; flex-direction: column; gap: 6px;
+            text-decoration: none; cursor: zoom-in;
+        }
+        .thumb img {
+            width: 100%; height: auto; display: block;
+            border: 1px solid #e5e5e3; border-radius: 8px;
+            transition: border-color .15s ease, box-shadow .15s ease;
+        }
+        .thumb:hover img {
+            border-color: #1a1a1a;
+            box-shadow: 0 2px 10px rgba(0,0,0,.12);
+        }
+        .thumb .cap {
+            font-size: .75rem; color: #888; text-align: center;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+
+        /* 원본 보기 라이트박스 — 썸네일 클릭 시 같은 화면 위에 원본 크기로 표시 */
+        .lightbox {
+            display: none; position: fixed; inset: 0; z-index: 9999;
+            background: rgba(0,0,0,.85);
+        }
+        /* 화면 정중앙에 표시 */
+        .lightbox:target {
+            display: flex; align-items: center; justify-content: center;
+            padding: 3vh 3vw;
+        }
+        .lightbox .lb-backdrop {
+            position: fixed; inset: 0; z-index: 1;   /* 바깥 클릭으로 닫기 */
+            display: block; cursor: zoom-out;
+        }
+        .lightbox img {
+            position: relative; z-index: 2;
+            max-width: 94vw; max-height: 92vh;       /* 화면에 꽉 차게 맞춤(원본 바이트라 선명) */
+            width: auto; height: auto; display: block;
+            border-radius: 6px;
+            box-shadow: 0 6px 30px rgba(0,0,0,.5);
+        }
+        /* ✕ 닫기 — 오버레이(.lightbox) 기준 absolute라 항상 오른쪽 위에 고정 */
+        .lightbox .lb-x {
+            position: absolute; top: 16px; right: 20px; z-index: 3;
+            color: #fff; font-size: 18px; font-weight: 600; line-height: 1;
+            text-decoration: none; gap: 6px;
+            padding: 8px 14px; border-radius: 22px;
+            display: inline-flex; align-items: center;
+            background: rgba(0,0,0,.55); border: 1px solid rgba(255,255,255,.4);
+        }
+        .lightbox .lb-x:hover { background: rgba(0,0,0,.85); }
+
+        /* 생성 완료 배너 — 기본 초록 박스 대신 에디토리얼 톤(흰 카드 + 초록 강조선) */
+        .gen-result {
+            display: flex; align-items: center; gap: 12px;
+            border: 1px solid #e5e5e3; border-left: 3px solid #2e7d32;
+            background: #fbfdfb; border-radius: 8px;
+            padding: 13px 16px; margin: .2rem 0 .8rem;
+        }
+        .gen-result .check {
+            flex: none; width: 24px; height: 24px; border-radius: 50%;
+            background: #2e7d32; color: #fff; font-size: 14px; font-weight: 700;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .gen-result .txt { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+        .gen-result .t { font-size: 14px; font-weight: 600; color: #1a1a1a; }
+        .gen-result .s {
+            font-size: 12px; color: #8a8a87;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
         }
 
         /* 사이드바 */
@@ -306,6 +384,16 @@ def step(n, title, desc=None):
     )
     if desc:
         st.caption(desc)
+
+
+def gen_result_banner(title, sub=""):
+    """생성 완료를 알리는 에디토리얼 톤 배너(기본 st.success 초록 박스 대체)."""
+    sub_html = f'<span class="s">{html.escape(sub)}</span>' if sub else ""
+    st.markdown(
+        f'<div class="gen-result"><span class="check">✓</span>'
+        f'<span class="txt"><span class="t">{html.escape(title)}</span>{sub_html}</span></div>',
+        unsafe_allow_html=True,
+    )
 
 
 def _img_key(f):
@@ -542,12 +630,32 @@ def render_expense():
                     st.rerun()
             # 사진은 켤 때만 표시 — 매 편집마다 다시 그리지 않아 표 입력이 매끄러움.
             if st.toggle("사진 미리보기", value=False, key="show_thumbs",
-                         help="켜면 업로드한 영수증 사진을 표시합니다. 표 편집이 느리면 꺼두세요."):
-                # 칸 수를 항상 5로 고정 — 1~2장이어도 왼쪽부터 좁은 칸에 나란히 붙도록
-                cols = st.columns(5, gap="small")
+                         help="켜면 업로드한 영수증 사진을 표시합니다. 사진을 클릭하면 새 탭에 원본이 열립니다. "
+                              "표 편집이 느리면 꺼두세요."):
+                # 새 탭으로 data: URL을 열면 브라우저가 보안상 차단(빈 '무제' 탭)하므로,
+                # 같은 페이지 위에 원본을 띄우는 CSS :target 라이트박스를 쓴다.
+                # 썸네일은 #lb-i 로 링크 → 해당 오버레이가 나타나고, 바깥/✕ 클릭(#_)으로 닫힌다.
+                st.caption("🔍 사진을 클릭하면 이 화면 위에 원본 크기로 크게 보여요. (바깥을 클릭하면 닫힘)")
+                thumbs, boxes = [], []
                 for i, img in enumerate(images):
-                    with cols[i % len(cols)]:
-                        st.image(img.getvalue(), caption=img.name, width=180)
+                    data_url = _image_to_data_url(img.getvalue(), img.name)
+                    nm = html.escape(img.name)
+                    thumbs.append(
+                        f'<a class="thumb" href="#lb-{i}" title="클릭하면 원본 보기">'
+                        f'<img src="{data_url}" alt="{nm}"/>'
+                        f'<span class="cap">{nm}</span></a>'
+                    )
+                    boxes.append(
+                        f'<div class="lightbox" id="lb-{i}">'
+                        f'<a class="lb-backdrop" href="#_"></a>'
+                        f'<a class="lb-x" href="#_" title="닫기">✕ 닫기</a>'
+                        f'<img src="{data_url}" alt="{nm}"/></div>'
+                    )
+                st.markdown(
+                    f'<div class="thumb-grid">{"".join(thumbs)}</div>'
+                    + "".join(boxes),
+                    unsafe_allow_html=True,
+                )
 
     # ---- 3. 분석 실행 (새로 추가된 사진만) -------------------------------
     with st.container(border=True):
@@ -822,7 +930,10 @@ def render_expense():
 
                 # 한 번 생성해 다운로드가 뜬 뒤에만, '이어서 추가' 옵션을 작게 노출
                 if st.session_state.get("gen_buf"):
-                    st.success(st.session_state["gen_msg"])
+                    gen_result_banner(
+                        "비용청구서가 완성됐어요",
+                        f"{st.session_state['gen_msg']} · {st.session_state['gen_name']}",
+                    )
                     if st.session_state.get("gen_preview") is not None:
                         st.caption("📋 생성된 청구서에 채워진 내용 미리보기 (다운로드 전 확인용)")
                         st.dataframe(st.session_state["gen_preview"],
@@ -954,7 +1065,8 @@ def render_overtime():
                     "(기본 양식이 폴더에 있으면 자동으로 사용됩니다)")
             return
 
-        if st.button("📥 신청서 생성", type="primary", width='stretch'):
+        if st.button("신청서 생성", type="primary", width='stretch',
+                     help="대체휴무 입력을 반영해 연장근무신청서를 채웁니다."):
             # 표에서 고른 대체휴무지급/대체휴무시간/비고를 일자별로 모은다.
             extras = {}
             for rec, (_, row) in zip(records, edited.iterrows()):
@@ -973,12 +1085,22 @@ def render_overtime():
                 return
             stamp = datetime.now().strftime("%Y%m%d_%H%M")
             base = os.path.splitext(tpl_name)[0]
-            out_name = f"{base}_작성완료_{stamp}.xlsx"
-            st.success(f"{n}건을 채웠습니다.")
+            # 결과를 세션에 보관 → 다운로드/새로고침 후에도 유지된다.
+            st.session_state["ot_buf"] = buf.getvalue()
+            st.session_state["ot_name"] = f"{base}_작성완료_{stamp}.xlsx"
+            st.session_state["ot_count"] = n
+            st.rerun()
+
+        # 생성된 결과가 있으면 완료 배너 + 다운로드를 항상 표시
+        if st.session_state.get("ot_buf"):
+            gen_result_banner(
+                "연장근무신청서가 완성됐어요",
+                f"{st.session_state['ot_count']}건 반영 · {st.session_state['ot_name']}",
+            )
             st.download_button(
-                "⬇️ 완성된 연장근무신청서 다운로드",
-                data=buf,
-                file_name=out_name,
+                "⬇️ 완성된 신청서 다운로드",
+                data=st.session_state["ot_buf"],
+                file_name=st.session_state["ot_name"],
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 width='stretch',
             )

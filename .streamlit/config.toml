@@ -1,6 +1,8 @@
 [theme]
 base = "light"
-primaryColor = "#7c6cf0"
+# 강조색: 에디토리얼 톤에 맞춘 검정 (라디오·토글·+/− 스테퍼 등 위젯 강조색)
+primaryColor = "#1a1a1a"
 backgroundColor = "#ffffff"
-secondaryBackgroundColor = "#f6f5fb"
-textColor = "#2d3436"
+# 보라빛(#f6f5fb) 제거 → 중립 웜그레이
+secondaryBackgroundColor = "#f1f0ee"
+textColor = "#1a1a1a"
