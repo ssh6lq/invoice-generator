@@ -118,53 +118,61 @@ def inject_css(_t):
     st.markdown(
         """
         <style>
-        .stApp { background: #f9f9f8; }
-        .block-container { padding-top: 1.8rem; max-width: 1100px; }
+        .stApp { background: #f2f4f7; }
+        .block-container { padding-top: 2.4rem; max-width: 1100px; }
+        header[data-testid="stHeader"] { background: transparent; }
 
         /* 히어로 영역 */
         .ed-hero {
-            border-top: 2px solid #1a1a1a;
+            border-top: 2px solid #3182f6;
             padding-top: 16px; padding-bottom: 16px;
-            border-bottom: 1px solid #e5e5e3; margin-bottom: 20px;
+            border-bottom: 1px solid #e5e8eb; margin-bottom: 20px;
         }
         .ed-hero .meta { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
-        .ed-hero .appname { font-size: 12px; font-weight: 600; color: #1a1a1a; }
+        .ed-hero .appname { font-size: 12px; font-weight: 600; color: #191f28; }
         .ed-hero .vdiv { display: inline-block; width: 1px; height: 11px;
             background: #ccc; vertical-align: middle; }
         .ed-hero .sub { font-size: 12px; color: #999; }
         .ed-hero .bottom { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
         .ed-hero .headline { font-size: 22px; font-weight: 600;
-            color: #1a1a1a; line-height: 1.35; white-space: pre-line; }
+            color: #191f28; line-height: 1.35; white-space: pre-line; }
         .ed-hero .tag { font-size: 11px; font-weight: 500; color: #666;
-            border: 1px solid #d0d0cc; padding: 4px 12px; border-radius: 20px;
+            border: 1px solid #dde2e8; padding: 4px 12px; border-radius: 20px;
             white-space: nowrap; margin-top: 4px; }
 
         /* 단계 헤더 */
         .step { display: flex; align-items: baseline; gap: 10px; margin: .3rem 0 .15rem; }
         .step .num { font-size: 11px; font-weight: 500; color: #aaa; min-width: 20px; }
-        .step .ttl { font-size: 15px; font-weight: 600; color: #1a1a1a; }
+        .step .ttl { font-size: 15px; font-weight: 600; color: #191f28; }
 
         /* 버튼 */
         .stButton > button, .stDownloadButton > button {
-            border-radius: 6px; font-weight: 600; padding: .45rem 1rem;
+            border-radius: 8px; font-weight: 600; padding: .45rem 1rem;
         }
         .stButton > button[kind="primary"], .stDownloadButton > button {
-            background: #1a1a1a; border: none; color: #fff;
+            background: #3182f6; border: none; color: #fff;
         }
         .stButton > button[kind="primary"]:hover, .stDownloadButton > button:hover {
-            background: #333;
+            background: #1b64da;
+        }
+        /* 비활성(예: 올린 사진 0장)일 때는 회색으로 — 누를 수 없음을 분명히 */
+        .stButton > button[kind="primary"]:disabled,
+        .stButton > button[kind="primary"][disabled],
+        .stDownloadButton > button:disabled {
+            background: #e9edf2 !important; color: #aab2bd !important;
+            cursor: not-allowed !important;
         }
 
         /* 지표 카드 */
         div[data-testid="stMetric"] {
-            background: #fff; border: 1px solid #e5e5e3; border-radius: 6px;
+            background: #fff; border: 1px solid #e5e8eb; border-radius: 8px;
             padding: 12px 16px;
         }
         div[data-testid="stMetricValue"] { font-size: 1.3rem; }
 
         /* 섹션 컨테이너(카드) */
         div[data-testid="stVerticalBlockBorderWrapper"] {
-            background: #fff; border-radius: 6px; border-color: #e5e5e3 !important;
+            background: #fff; border-radius: 8px; border-color: #e5e8eb !important;
         }
 
         /* 입력칸 라벨 */
@@ -184,22 +192,22 @@ def inject_css(_t):
         }
         .stTextInput div[data-baseweb="input"],
         .stNumberInput div[data-baseweb="input"] {
-            border: 1px solid #d5d5d2 !important; border-radius: 6px !important;
+            border: 1px solid #dde2e8 !important; border-radius: 8px !important;
         }
         .stTextInput div[data-baseweb="input"]:focus-within,
         .stNumberInput div[data-baseweb="input"]:focus-within {
-            border-color: #1a1a1a !important;
-            box-shadow: 0 0 0 2px rgba(26,26,26,.1) !important;
+            border-color: #3182f6 !important;
+            box-shadow: 0 0 0 2px rgba(49,130,246,.18) !important;
         }
-        .stTextInput input, .stNumberInput input { color: #1a1a1a !important; font-weight: 500; }
+        .stTextInput input, .stNumberInput input { color: #191f28 !important; font-weight: 500; }
         .stTextInput input::placeholder, .stNumberInput input::placeholder { color: #aaa !important; }
 
         /* 선택박스도 같은 흰색 톤으로 통일 */
         .stSelectbox div[data-baseweb="select"] > div {
-            background: #fff !important; border: 1px solid #d5d5d2 !important; border-radius: 6px !important;
+            background: #fff !important; border: 1px solid #dde2e8 !important; border-radius: 8px !important;
         }
         .stSelectbox div[data-baseweb="select"] > div:focus-within {
-            border-color: #1a1a1a !important; box-shadow: 0 0 0 2px rgba(26,26,26,.1) !important;
+            border-color: #3182f6 !important; box-shadow: 0 0 0 2px rgba(49,130,246,.18) !important;
         }
         /* 일괄 툴바: 목적 셀렉트와 결제방식 세그먼트(칩) 높이 통일 (둘 다 34px) */
         .stSelectbox div[data-baseweb="select"] > div {
@@ -209,6 +217,25 @@ def inject_css(_t):
             min-height: 34px !important; height: 34px !important;
             padding-top: 0 !important; padding-bottom: 0 !important;
         }
+        /* 헤드라인 아래 '작업 선택' — 토스풍 pill 토글(연회색 트랙 + 선택 시 흰 알약) */
+        .st-key-mode_select { margin: 2px 0 22px; }
+        .st-key-mode_select div[data-testid="stButtonGroup"] {
+            display: inline-flex !important; gap: 4px !important;
+            background: #eaeef3 !important; padding: 4px !important; border-radius: 12px !important;
+        }
+        .st-key-mode_select button[data-testid^="stBaseButton-segmented_control"] {
+            min-height: 38px !important; height: 38px !important;
+            padding: 0 24px !important; font-size: 14px !important; font-weight: 600 !important;
+            border: none !important; background: transparent !important;
+            color: #5e6b7b !important; border-radius: 9px !important;
+        }
+        .st-key-mode_select button[data-testid^="stBaseButton-segmented_control"]:hover {
+            color: #191f28 !important; background: rgba(255,255,255,.5) !important;
+        }
+        .st-key-mode_select button[data-testid="stBaseButton-segmented_controlActive"] {
+            background: #ffffff !important; color: #1b64da !important;
+            box-shadow: 0 1px 3px rgba(16,40,80,.14) !important;
+        }
         /* 일괄 툴바 '일괄 채우기' 라벨 — 마크다운 기본 여백 제거 + 세로 중앙 */
         .st-key-bulkbar [data-testid="stMarkdownContainer"],
         .st-key-bulkbar [data-testid="stMarkdownContainer"] p { margin: 0 !important; }
@@ -216,12 +243,12 @@ def inject_css(_t):
         /* 파일 업로드 드롭존 — 연보라(테마색) 제거 + 정돈된 점선 박스 */
         [data-testid="stFileUploaderDropzone"] {
             background: #fff !important;
-            border: 1px dashed #cfcfca !important; border-radius: 8px !important;
+            border: 1px dashed #dde2e8 !important; border-radius: 8px !important;
             padding: 14px 18px !important;
             transition: border-color .15s ease, background .15s ease;
         }
         [data-testid="stFileUploaderDropzone"]:hover {
-            border-color: #1a1a1a !important; background: #fafafa !important;
+            border-color: #3182f6 !important; background: #f4f8fe !important;
         }
         [data-testid="stFileUploaderDropzoneInstructions"] { color: #666 !important; }
         [data-testid="stFileUploaderDropzoneInstructions"] svg,
@@ -231,12 +258,12 @@ def inject_css(_t):
         [data-testid="stFileUploaderDropzoneInstructions"] small { color: #aaa !important; }
         /* Browse files 버튼 — 흰 바탕 + 회색 테두리 (에디토리얼 톤) */
         [data-testid="stFileUploaderDropzone"] button {
-            background: #fff !important; color: #1a1a1a !important;
-            border: 1px solid #d5d5d2 !important; border-radius: 6px !important;
+            background: #fff !important; color: #191f28 !important;
+            border: 1px solid #dde2e8 !important; border-radius: 8px !important;
             font-weight: 600 !important; min-height: 36px !important;
         }
         [data-testid="stFileUploaderDropzone"] button:hover {
-            border-color: #1a1a1a !important; background: #f5f5f4 !important; color: #1a1a1a !important;
+            border-color: #3182f6 !important; background: #eef4fe !important; color: #1b64da !important;
         }
 
         /* 영수증 업로더: 네이티브 칩 목록만 숨기고(커스텀 목록만 노출),
@@ -283,11 +310,11 @@ def inject_css(_t):
         }
         .thumb img {
             width: 100%; height: auto; display: block;
-            border: 1px solid #e5e5e3; border-radius: 8px;
+            border: 1px solid #e5e8eb; border-radius: 8px;
             transition: border-color .15s ease, box-shadow .15s ease;
         }
         .thumb:hover img {
-            border-color: #1a1a1a;
+            border-color: #3182f6;
             box-shadow: 0 2px 10px rgba(0,0,0,.12);
         }
         .thumb .cap {
@@ -313,7 +340,7 @@ def inject_css(_t):
             position: relative; z-index: 2;
             max-width: 94vw; max-height: 92vh;       /* 화면에 꽉 차게 맞춤(원본 바이트라 선명) */
             width: auto; height: auto; display: block;
-            border-radius: 6px;
+            border-radius: 8px;
             box-shadow: 0 6px 30px rgba(0,0,0,.5);
         }
         /* ✕ 닫기 — 오버레이(.lightbox) 기준 absolute라 항상 오른쪽 위에 고정 */
@@ -330,7 +357,7 @@ def inject_css(_t):
         /* 생성 완료 배너 — 기본 초록 박스 대신 에디토리얼 톤(흰 카드 + 초록 강조선) */
         .gen-result {
             display: flex; align-items: center; gap: 12px;
-            border: 1px solid #e5e5e3; border-left: 3px solid #2e7d32;
+            border: 1px solid #e5e8eb; border-left: 3px solid #2e7d32;
             background: #fbfdfb; border-radius: 8px;
             padding: 13px 16px; margin: .2rem 0 .8rem;
         }
@@ -340,17 +367,41 @@ def inject_css(_t):
             display: flex; align-items: center; justify-content: center;
         }
         .gen-result .txt { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-        .gen-result .t { font-size: 14px; font-weight: 600; color: #1a1a1a; }
+        .gen-result .t { font-size: 14px; font-weight: 600; color: #191f28; }
         .gen-result .s {
             font-size: 12px; color: #8a8a87;
             overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
         }
 
-        /* 사이드바 */
-        section[data-testid="stSidebar"] { background: #fff; border-right: 1px solid #e5e5e3; }
+        /* 사이드바 — 정돈된 톤 */
+        section[data-testid="stSidebar"] { background: #fbfcfe; border-right: 1px solid #e5e8eb; }
+        section[data-testid="stSidebar"] .block-container { padding-top: 1.4rem; }
+        /* 브랜드: 파란 액센트 바 + 제목 */
         .side-brand {
-            font-size: 14px; font-weight: 600; color: #1a1a1a;
-            display: flex; align-items: center; gap: .4rem; margin-bottom: .2rem;
+            font-size: 15px; font-weight: 700; color: #191f28;
+            display: flex; align-items: center; gap: 9px; margin-bottom: .15rem;
+        }
+        .side-brand::before {
+            content: ""; width: 4px; height: 17px; border-radius: 2px;
+            background: #3182f6; display: inline-block;
+        }
+        /* 사이드바 구분선 — 더 옅게 */
+        section[data-testid="stSidebar"] hr { margin: 1rem 0; border-color: #eceff3; }
+        /* 섹션 라벨(📄 양식 등) 통일 */
+        section[data-testid="stSidebar"] h5 {
+            font-size: 12px !important; font-weight: 700 !important;
+            letter-spacing: .2px; color: #8b95a1 !important; margin-bottom: .5rem !important;
+        }
+        /* 환경 설정 expander — 부드러운 카드형 */
+        section[data-testid="stSidebar"] [data-testid="stExpander"] details {
+            border: 1px solid #e5e8eb !important; border-radius: 10px !important;
+            background: #ffffff !important;
+        }
+        section[data-testid="stSidebar"] [data-testid="stExpander"] summary {
+            font-weight: 600 !important; color: #191f28 !important; padding: 10px 12px !important;
+        }
+        section[data-testid="stSidebar"] [data-testid="stExpander"] summary:hover {
+            color: #1b64da !important;
         }
         </style>
         """,
@@ -372,6 +423,16 @@ def hero(t):
         '</div>'
         '</div>',
         unsafe_allow_html=True,
+    )
+
+
+def page_header(t):
+    """헤드라인(hero) + 작업 선택 탭을 본문 최상단에 함께 렌더한다.
+    탭을 헤더가 아닌 본문 흐름에 두어 상단 헤더에 가리지 않게 한다."""
+    hero(t)
+    st.segmented_control(
+        "작업 선택", MODE_OPTIONS,
+        key="mode_select", label_visibility="collapsed",
     )
 
 
@@ -479,12 +540,12 @@ with st.sidebar:
     st.markdown('<div class="side-brand">청구서 자동 작성</div>', unsafe_allow_html=True)
     st.caption("영수증·근태현황을 올리면 양식을 자동으로 채워드려요.")
     st.divider()
-    mode = st.radio(
-        "작업 선택",
-        ["🧾 비용청구", "🌙 연장근무(야근) 청구"],
-        index=0,
-    )
-    st.divider()
+
+# 작업 선택: 헤드라인 바로 아래(본문 흐름)에서 탭으로 렌더한다(page_header). 상단 헤더에
+# 가리지 않으면서 첫 사용자가 바로 인지할 수 있다. 모드 값은 세션에서 읽어 테마를 먼저 정한다.
+MODE_OPTIONS = ["🧾 비용청구", "🌙 연장근무(야근) 청구"]
+st.session_state.setdefault("mode_select", MODE_OPTIONS[0])
+mode = st.session_state.get("mode_select") or MODE_OPTIONS[0]
 
 theme = THEMES["expense"] if mode.startswith("🧾") else THEMES["overtime"]
 inject_css(theme)
@@ -494,44 +555,47 @@ inject_css(theme)
 # 1) 비용청구 모드
 # =========================================================================
 def render_expense():
-    hero(theme)
+    page_header(theme)
 
     with st.sidebar:
-        st.markdown("##### ⚙️ 설정")
-        provider = st.radio(
-            "모델 제공자", ["로컬 서버", "OpenAI"], index=0, horizontal=True,
-            help="로컬 서버(OpenAI 호환, 예: vLLM)는 API 키 없이 쓸 수 있어요. "
-                 "어느 쪽이든 비전(이미지 입력) 모델이어야 영수증 인식이 됩니다.",
-        )
-        if provider == "로컬 서버":
-            base_url = st.text_input(
-                "서버 주소 (base_url)", value="http://192.168.1.51:8001/v1",
-                help="OpenAI 호환 엔드포인트. vLLM은 보통 끝에 /v1 을 붙입니다.",
+        # AI 모델 연결 설정은 IT 담당자가 한 번 맞춰두는 값이라, 일반 사용자 화면을
+        # 깔끔하게 유지하려고 접이식(기본 닫힘) '고급 설정'으로 숨긴다.
+        with st.expander("⚙️ 환경 설정", expanded=False):
+            st.caption("AI 모델 연결 설정이에요. 보통 IT 담당자가 처음 한 번만 맞춰두면 됩니다.")
+            provider = st.radio(
+                "모델 제공자", ["로컬 서버", "OpenAI"], index=0, horizontal=True,
+                help="로컬 서버(OpenAI 호환, 예: vLLM)는 API 키 없이 쓸 수 있어요. "
+                     "어느 쪽이든 비전(이미지 입력) 모델이어야 영수증 인식이 됩니다.",
             )
-            model = st.text_input(
-                "모델명", value="/models/Qwen3.6-35B-A3B-FP8",
-                placeholder="예: /models/Qwen3.6-35B-A3B-FP8",
-                help="서버 구동 시 지정한 모델명과 정확히 같아야 합니다. "
-                     "'openai:' 접두어는 붙이지 마세요(자동 제거됨).",
-            )
-            api_key = st.text_input(
-                "API Key (선택)", type="password", value="",
-                help="키 인증이 필요한 서버만 입력. 없으면 비워두세요.",
-            )
-        else:
-            base_url = None
-            api_key = st.text_input(
-                "OpenAI API Key",
-                type="password",
-                value=os.getenv("OPENAI_API_KEY", ""),
-                help="sk-... 형식. 입력값은 이 세션에서만 사용됩니다.",
-            )
-            model = st.selectbox(
-                "모델",
-                ["gpt-4o", "gpt-4o-mini", "gpt-4.1", "gpt-4.1-mini"],
-                index=0,
-                help="비전(이미지) 입력을 지원하는 모델이어야 합니다.",
-            )
+            if provider == "로컬 서버":
+                base_url = st.text_input(
+                    "서버 주소 (base_url)", value="http://192.168.1.51:8001/v1",
+                    help="OpenAI 호환 엔드포인트. vLLM은 보통 끝에 /v1 을 붙입니다.",
+                )
+                model = st.text_input(
+                    "모델명", value="/models/Qwen3.6-35B-A3B-FP8",
+                    placeholder="예: /models/Qwen3.6-35B-A3B-FP8",
+                    help="서버 구동 시 지정한 모델명과 정확히 같아야 합니다. "
+                         "'openai:' 접두어는 붙이지 마세요(자동 제거됨).",
+                )
+                api_key = st.text_input(
+                    "API Key (선택)", type="password", value="",
+                    help="키 인증이 필요한 서버만 입력. 없으면 비워두세요.",
+                )
+            else:
+                base_url = None
+                api_key = st.text_input(
+                    "OpenAI API Key",
+                    type="password",
+                    value=os.getenv("OPENAI_API_KEY", ""),
+                    help="sk-... 형식. 입력값은 이 세션에서만 사용됩니다.",
+                )
+                model = st.selectbox(
+                    "모델",
+                    ["gpt-4o", "gpt-4o-mini", "gpt-4.1", "gpt-4.1-mini"],
+                    index=0,
+                    help="비전(이미지) 입력을 지원하는 모델이어야 합니다.",
+                )
         st.divider()
         st.markdown("##### 📄 양식")
         xlsm_file = st.file_uploader(
@@ -955,7 +1019,7 @@ def render_expense():
 # 2) 연장근무(야근) 청구 모드
 # =========================================================================
 def render_overtime():
-    hero(theme)
+    page_header(theme)
 
     with st.sidebar:
         st.markdown("##### 📄 양식")
