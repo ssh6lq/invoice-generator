@@ -15,7 +15,9 @@ from datetime import datetime
 import pandas as pd
 import streamlit as st
 
-from receipt_parser import parse_many
+from langchain_core.messages import HumanMessage, SystemMessage
+
+from receipt_parser import Receipt, SYSTEM_PROMPT, _image_to_data_url
 from excel_filler import fill_workbook, get_dropdown_options, get_support_limits, _to_date
 from overtime_filler import parse_attendance, fill_overtime
 
@@ -25,6 +27,61 @@ st.set_page_config(page_title="청구서 자동 작성", page_icon="🧾", layou
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_EXPENSE_TPL = os.path.join(APP_DIR, "비용청구양식.xlsm")
 DEFAULT_OVERTIME_TPL = os.path.join(APP_DIR, "연장근무(수당)신청서_양식.xlsx")
+
+
+def _build_receipt_llm(provider, model, api_key, base_url):
+    """영수증 파싱용 LLM 생성. provider='로컬 서버'면 OpenAI 호환 엔드포인트(base_url)에
+    붙고 API 키가 없어도 된다. 어느 쪽이든 비전(이미지 입력) 모델이어야 한다."""
+    from langchain_openai import ChatOpenAI
+    if provider == "로컬 서버":
+        # init_chat_model 식 접두어('openai:')를 붙여 넣어도 자동 제거 (실제 API엔 모델명만)
+        if model.startswith("openai:"):
+            model = model[len("openai:"):]
+        llm = ChatOpenAI(
+            model=model,
+            base_url=base_url,
+            api_key=(api_key or "EMPTY"),   # 키가 필요 없는 서버용 더미값
+            temperature=0.1,
+            max_retries=5,
+            model_kwargs={"extra_body": {
+                # Qwen3 계열: 추론(thinking) 토큰을 끄지 않으면 JSON 출력이 깨질 수 있음
+                "chat_template_kwargs": {"enable_thinking": False},
+            }},
+        )
+        # vLLM은 tool-calling 파서가 꺼져 있을 수 있어 guided JSON(json_schema)이 더 안전
+        return llm.with_structured_output(Receipt, method="json_schema")
+    kwargs = {"model": model, "temperature": 0.0}
+    if api_key:
+        kwargs["api_key"] = api_key
+    llm = ChatOpenAI(**kwargs)
+    return llm.with_structured_output(Receipt)
+
+
+def _parse_receipts(payload, llm, on_progress=None):
+    """payload=list[(filename, bytes)] -> list[dict]. 주어진 llm으로 한 장씩 파싱한다.
+    메시지는 [이미지 → 텍스트] 순서로 담는다(로컬 서버 요구 형식)."""
+    results = []
+    for idx, (fname, content) in enumerate(payload):
+        rec = {"filename": fname, "date": None, "store": None,
+               "amount": None, "time": None, "region": None, "error": None}
+        try:
+            data_url = _image_to_data_url(content, fname)
+            messages = [
+                SystemMessage(content=SYSTEM_PROMPT),
+                HumanMessage(content=[
+                    {"type": "image_url", "image_url": {"url": data_url}},
+                    {"type": "text", "text": "이 영수증에서 정보를 추출해줘."},
+                ]),
+            ]
+            r = llm.invoke(messages)
+            rec.update(date=r.date, store=r.store, amount=r.amount,
+                       time=r.time, region=r.region)
+        except Exception as e:  # noqa: BLE001
+            rec["error"] = str(e)
+        results.append(rec)
+        if on_progress:
+            on_progress(idx + 1, len(payload), rec)
+    return results
 
 
 def _template_bytes_name(uploaded, default_path):
@@ -43,123 +100,180 @@ def _template_bytes_name(uploaded, default_path):
 # =========================================================================
 THEMES = {
     "expense": {
-        "accent": "#6c5ce7", "accent2": "#8e7bff", "bg": "#f6f5fc",
-        "icon": "🧾", "title": "영수증 → 비용청구서 자동 작성",
+        "tag": "비용청구",
+        "headline": "영수증 사진 한 장으로\n비용청구서를 완성하세요",
         "desc": "영수증 사진을 올리면 날짜·상호명·금액을 인식해 비용청구 양식을 자동으로 채웁니다.",
     },
     "overtime": {
-        "accent": "#3b6fd4", "accent2": "#5c93f0", "bg": "#f2f6fd",
-        "icon": "🌙", "title": "근태현황 → 연장근무신청서 자동 작성",
+        "tag": "연장근무청구",
+        "headline": "근태현황 파일로\n연장근무신청서를 자동 작성하세요",
         "desc": "월간 근태현황을 올리면 '승인 초과 근로시간'이 있는 날을 찾아 신청서를 자동으로 채웁니다.",
     },
 }
 
 
-def inject_css(t):
+def inject_css(_t):
     st.markdown(
-        f"""
+        """
         <style>
-        .stApp {{ background: {t['bg']}; }}
-        .block-container {{ padding-top: 2.2rem; max-width: 1100px; }}
+        .stApp { background: #f9f9f8; }
+        .block-container { padding-top: 1.8rem; max-width: 1100px; }
 
-        /* 히어로 배너 */
-        .hero {{
-            background: linear-gradient(120deg, {t['accent']}, {t['accent2']});
-            color: #fff; padding: 24px 28px; border-radius: 18px;
-            margin-bottom: 18px;
-            box-shadow: 0 10px 28px {t['accent']}33;
-        }}
-        .hero h1 {{ margin: 0; font-size: 1.55rem; font-weight: 800; letter-spacing: -.3px; }}
-        .hero p {{ margin: .45rem 0 0; opacity: .92; font-size: .96rem; }}
+        /* 히어로 영역 */
+        .ed-hero {
+            border-top: 2px solid #1a1a1a;
+            padding-top: 16px; padding-bottom: 16px;
+            border-bottom: 1px solid #e5e5e3; margin-bottom: 20px;
+        }
+        .ed-hero .meta { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+        .ed-hero .appname { font-size: 12px; font-weight: 600; color: #1a1a1a; }
+        .ed-hero .vdiv { display: inline-block; width: 1px; height: 11px;
+            background: #ccc; vertical-align: middle; }
+        .ed-hero .sub { font-size: 12px; color: #999; }
+        .ed-hero .bottom { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+        .ed-hero .headline { font-size: 22px; font-weight: 600;
+            color: #1a1a1a; line-height: 1.35; white-space: pre-line; }
+        .ed-hero .tag { font-size: 11px; font-weight: 500; color: #666;
+            border: 1px solid #d0d0cc; padding: 4px 12px; border-radius: 20px;
+            white-space: nowrap; margin-top: 4px; }
 
-        /* 단계 배지 헤더 */
-        .step {{ display: flex; align-items: center; gap: .6rem; margin: .4rem 0 .2rem; }}
-        .step .num {{
-            background: {t['accent']}; color: #fff; width: 30px; height: 30px;
-            border-radius: 50%; display: flex; align-items: center; justify-content: center;
-            font-weight: 700; font-size: .95rem; flex: none;
-            box-shadow: 0 3px 8px {t['accent']}55;
-        }}
-        .step .ttl {{ font-size: 1.18rem; font-weight: 800; color: #2d3436; }}
+        /* 단계 헤더 */
+        .step { display: flex; align-items: baseline; gap: 10px; margin: .3rem 0 .15rem; }
+        .step .num { font-size: 11px; font-weight: 500; color: #aaa; min-width: 20px; }
+        .step .ttl { font-size: 15px; font-weight: 600; color: #1a1a1a; }
 
         /* 버튼 */
-        .stButton > button, .stDownloadButton > button {{
-            border-radius: 11px; font-weight: 700; padding: .5rem 1rem;
-        }}
-        .stButton > button[kind="primary"], .stDownloadButton > button {{
-            background: {t['accent']}; border: none;
-        }}
-        .stButton > button[kind="primary"]:hover, .stDownloadButton > button:hover {{
-            background: {t['accent2']};
-        }}
+        .stButton > button, .stDownloadButton > button {
+            border-radius: 6px; font-weight: 600; padding: .45rem 1rem;
+        }
+        .stButton > button[kind="primary"], .stDownloadButton > button {
+            background: #1a1a1a; border: none; color: #fff;
+        }
+        .stButton > button[kind="primary"]:hover, .stDownloadButton > button:hover {
+            background: #333;
+        }
 
         /* 지표 카드 */
-        div[data-testid="stMetric"] {{
-            background: #fff; border: 1px solid #eceaf6; border-radius: 14px;
-            padding: 12px 16px; box-shadow: 0 2px 10px rgba(0,0,0,.04);
-        }}
-        div[data-testid="stMetricValue"] {{ font-size: 1.45rem; }}
+        div[data-testid="stMetric"] {
+            background: #fff; border: 1px solid #e5e5e3; border-radius: 6px;
+            padding: 12px 16px;
+        }
+        div[data-testid="stMetricValue"] { font-size: 1.3rem; }
 
-        /* 테두리 컨테이너(카드) */
-        div[data-testid="stVerticalBlockBorderWrapper"] {{
-            background: #fff; border-radius: 14px;
-        }}
+        /* 섹션 컨테이너(카드) */
+        div[data-testid="stVerticalBlockBorderWrapper"] {
+            background: #fff; border-radius: 6px; border-color: #e5e5e3 !important;
+        }
 
-        /* 입력칸 라벨 — 또렷하게 */
+        /* 입력칸 라벨 */
         div[data-testid="stWidgetLabel"] label,
-        div[data-testid="stWidgetLabel"] p {{
-            color: #2d3436 !important; font-weight: 700;
-        }}
+        div[data-testid="stWidgetLabel"] p {
+            color: #333 !important; font-weight: 600;
+        }
 
-        /* 텍스트 입력칸 — 흰 배경 + 또렷한 테두리 (number_input과 테두리 겹침 방지 위해
-           text input 에만 한정해서 적용) */
-        .stTextInput div[data-baseweb="input"] {{
+        /* 입력칸 — 연보라(테마 secondaryBackground) 제거: 바깥 래퍼·안쪽 input 모두 흰색 */
+        .stTextInput div[data-baseweb="input"],
+        .stNumberInput div[data-baseweb="input"],
+        .stTextInput div[data-baseweb="base-input"],
+        .stNumberInput div[data-baseweb="base-input"],
+        .stTextInput input, .stNumberInput input {
             background: #fff !important;
-            border: 1.5px solid #d8d4ee !important; border-radius: 11px !important;
-        }}
-        .stTextInput div[data-baseweb="input"]:focus-within {{
-            border-color: {t['accent']} !important;
-            box-shadow: 0 0 0 3px {t['accent']}22 !important;
-        }}
-        .stTextInput input {{ color: #2d3436 !important; font-weight: 600; }}
-        .stTextInput input::placeholder {{ color: #9b97b5 !important; }}
+            background-color: #fff !important;
+        }
+        .stTextInput div[data-baseweb="input"],
+        .stNumberInput div[data-baseweb="input"] {
+            border: 1px solid #d5d5d2 !important; border-radius: 6px !important;
+        }
+        .stTextInput div[data-baseweb="input"]:focus-within,
+        .stNumberInput div[data-baseweb="input"]:focus-within {
+            border-color: #1a1a1a !important;
+            box-shadow: 0 0 0 2px rgba(26,26,26,.1) !important;
+        }
+        .stTextInput input, .stNumberInput input { color: #1a1a1a !important; font-weight: 500; }
+        .stTextInput input::placeholder, .stNumberInput input::placeholder { color: #aaa !important; }
 
-        /* 영수증 업로더의 기본 파일 목록 숨김 — 중복 없는 목록을 직접 보여주기 위함 */
-        .st-key-receipt_box [data-testid="stFileUploaderFile"] {{ display: none !important; }}
+        /* 선택박스도 같은 흰색 톤으로 통일 */
+        .stSelectbox div[data-baseweb="select"] > div {
+            background: #fff !important; border: 1px solid #d5d5d2 !important; border-radius: 6px !important;
+        }
+        .stSelectbox div[data-baseweb="select"] > div:focus-within {
+            border-color: #1a1a1a !important; box-shadow: 0 0 0 2px rgba(26,26,26,.1) !important;
+        }
+        /* 일괄 툴바: 목적 셀렉트와 결제방식 세그먼트(칩) 높이 통일 (둘 다 34px) */
+        .stSelectbox div[data-baseweb="select"] > div {
+            min-height: 34px !important; height: 34px !important;
+        }
+        div[data-testid="stButtonGroup"] button[data-testid^="stBaseButton-segmented_control"] {
+            min-height: 34px !important; height: 34px !important;
+            padding-top: 0 !important; padding-bottom: 0 !important;
+        }
+        /* 일괄 툴바 '일괄 채우기' 라벨 — 마크다운 기본 여백 제거 + 세로 중앙 */
+        .st-key-bulkbar [data-testid="stMarkdownContainer"],
+        .st-key-bulkbar [data-testid="stMarkdownContainer"] p { margin: 0 !important; }
 
-        /* 업로드 파일 — 넘버드 라인 목록 (은은한 보조 스타일: 단계 배지와 구분) */
-        .file-lines {{ margin: .3rem 0 1rem; display: flex; flex-direction: column; gap: 4px; }}
-        .file-line {{ display: flex; align-items: center; gap: .5rem;
-            font-size: .84rem; color: #6b6780; }}
-        .file-line .num {{
-            flex: none; width: 18px; height: 18px; border-radius: 50%;
-            background: #f0eef7; border: 1px solid #e0ddee; color: #9b97b5;
-            font-size: .68rem; font-weight: 600;
-            display: inline-flex; align-items: center; justify-content: center;
-        }}
-        .file-line .nm {{ overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
-        /* 파일 제거 ✕ — 배경·테두리·포커스박스 모두 제거, 목록과 같은 톤의 글자만 */
-        .st-key-receipt_box button,
-        .st-key-receipt_box button:hover,
-        .st-key-receipt_box button:active,
-        .st-key-receipt_box button:focus {{
+        /* 파일 업로드 드롭존 — 연보라(테마색) 제거 + 정돈된 점선 박스 */
+        [data-testid="stFileUploaderDropzone"] {
+            background: #fff !important;
+            border: 1px dashed #cfcfca !important; border-radius: 8px !important;
+            padding: 14px 18px !important;
+            transition: border-color .15s ease, background .15s ease;
+        }
+        [data-testid="stFileUploaderDropzone"]:hover {
+            border-color: #1a1a1a !important; background: #fafafa !important;
+        }
+        [data-testid="stFileUploaderDropzoneInstructions"] { color: #666 !important; }
+        [data-testid="stFileUploaderDropzoneInstructions"] svg,
+        [data-testid="stFileUploaderDropzoneInstructions"] span[data-testid="stIconMaterial"] {
+            color: #aaa !important; fill: #aaa !important;
+        }
+        [data-testid="stFileUploaderDropzoneInstructions"] small { color: #aaa !important; }
+        /* Browse files 버튼 — 흰 바탕 + 회색 테두리 (에디토리얼 톤) */
+        [data-testid="stFileUploaderDropzone"] button {
+            background: #fff !important; color: #1a1a1a !important;
+            border: 1px solid #d5d5d2 !important; border-radius: 6px !important;
+            font-weight: 600 !important; min-height: 36px !important;
+        }
+        [data-testid="stFileUploaderDropzone"] button:hover {
+            border-color: #1a1a1a !important; background: #f5f5f4 !important; color: #1a1a1a !important;
+        }
+
+        /* 영수증 업로더: 네이티브 칩 목록만 숨기고(커스텀 목록만 노출),
+           기본 업로드 안내문(아이콘·Browse·용량)은 그대로 유지한다. */
+        .st-key-receipt_box [data-testid="stFileChips"] { display: none !important; }
+        .st-key-receipt_box [data-testid="stFileUploaderFile"] { display: none !important; }
+        /* 파일이 올라가 있어도 기본 안내문이 사라지지 않도록 강제로 표시 */
+        .st-key-receipt_box [data-testid="stFileUploaderDropzoneInstructions"] {
+            display: flex !important;
+        }
+
+        /* 업로드 파일 목록 */
+        .file-lines { margin: .3rem 0 1rem; display: flex; flex-direction: column; gap: 4px; }
+        .file-line { display: flex; align-items: center; gap: .5rem;
+            font-size: .84rem; color: #666; }
+        .file-line .num { flex: none; font-size: 11px; font-weight: 500; color: #aaa; min-width: 18px; }
+        .file-line .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        /* ✕(파일 제거) 버튼만 투명 처리 — Browse files 버튼은 건드리지 않도록 stButton으로 한정 */
+        .st-key-receipt_box [data-testid="stButton"] button,
+        .st-key-receipt_box [data-testid="stButton"] button:hover,
+        .st-key-receipt_box [data-testid="stButton"] button:active,
+        .st-key-receipt_box [data-testid="stButton"] button:focus {
             background: transparent !important; background-color: transparent !important;
             border: none !important; box-shadow: none !important; outline: none !important;
-            color: #6b6780 !important; padding: 0 !important;
+            color: #999 !important; padding: 0 !important;
             min-height: 0 !important; height: auto !important;
             font-size: .9rem !important; line-height: 1 !important;
-        }}
-        .st-key-receipt_box button:hover {{ color: #e06b6b !important; }}
-        .st-key-receipt_box [data-testid="stButton"] {{
+        }
+        .st-key-receipt_box [data-testid="stButton"] button:hover { color: #c0392b !important; }
+        .st-key-receipt_box [data-testid="stButton"] {
             display: flex; align-items: center; min-height: 22px; background: transparent !important;
-        }}
+        }
 
         /* 사이드바 */
-        section[data-testid="stSidebar"] {{ background: #fff; border-right: 1px solid #ececf4; }}
-        .side-brand {{
-            font-size: 1.15rem; font-weight: 800; color: {t['accent']};
+        section[data-testid="stSidebar"] { background: #fff; border-right: 1px solid #e5e5e3; }
+        .side-brand {
+            font-size: 14px; font-weight: 600; color: #1a1a1a;
             display: flex; align-items: center; gap: .4rem; margin-bottom: .2rem;
-        }}
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -168,15 +282,25 @@ def inject_css(t):
 
 def hero(t):
     st.markdown(
-        f'<div class="hero"><h1>{t["icon"]} {t["title"]}</h1>'
-        f'<p>{t["desc"]}</p></div>',
+        '<div class="ed-hero">'
+        '<div class="meta">'
+        '<span class="appname">청구서 자동 작성</span>'
+        '<span class="vdiv"></span>'
+        '<span class="sub">영수증 인식 · 양식 자동완성</span>'
+        '</div>'
+        '<div class="bottom">'
+        f'<div class="headline">{t["headline"]}</div>'
+        f'<span class="tag">{t["tag"]}</span>'
+        '</div>'
+        '</div>',
         unsafe_allow_html=True,
     )
 
 
 def step(n, title, desc=None):
+    num_str = f"{n:02d}" if isinstance(n, int) else str(n)
     st.markdown(
-        f'<div class="step"><span class="num">{n}</span>'
+        f'<div class="step"><span class="num">{num_str}</span>'
         f'<span class="ttl">{title}</span></div>',
         unsafe_allow_html=True,
     )
@@ -264,7 +388,7 @@ def _results_to_df(results):
 # 사이드바 — 작업 선택
 # =========================================================================
 with st.sidebar:
-    st.markdown('<div class="side-brand">🧾 청구서 자동 작성</div>', unsafe_allow_html=True)
+    st.markdown('<div class="side-brand">청구서 자동 작성</div>', unsafe_allow_html=True)
     st.caption("영수증·근태현황을 올리면 양식을 자동으로 채워드려요.")
     st.divider()
     mode = st.radio(
@@ -286,18 +410,40 @@ def render_expense():
 
     with st.sidebar:
         st.markdown("##### ⚙️ 설정")
-        api_key = st.text_input(
-            "OpenAI API Key",
-            type="password",
-            value=os.getenv("OPENAI_API_KEY", ""),
-            help="sk-... 형식. 입력값은 이 세션에서만 사용됩니다.",
+        provider = st.radio(
+            "모델 제공자", ["로컬 서버", "OpenAI"], index=0, horizontal=True,
+            help="로컬 서버(OpenAI 호환, 예: vLLM)는 API 키 없이 쓸 수 있어요. "
+                 "어느 쪽이든 비전(이미지 입력) 모델이어야 영수증 인식이 됩니다.",
         )
-        model = st.selectbox(
-            "모델",
-            ["gpt-4o", "gpt-4o-mini", "gpt-4.1", "gpt-4.1-mini"],
-            index=0,
-            help="비전(이미지) 입력을 지원하는 모델이어야 합니다.",
-        )
+        if provider == "로컬 서버":
+            base_url = st.text_input(
+                "서버 주소 (base_url)", value="http://192.168.1.51:8001/v1",
+                help="OpenAI 호환 엔드포인트. vLLM은 보통 끝에 /v1 을 붙입니다.",
+            )
+            model = st.text_input(
+                "모델명", value="/models/Qwen3.6-35B-A3B-FP8",
+                placeholder="예: /models/Qwen3.6-35B-A3B-FP8",
+                help="서버 구동 시 지정한 모델명과 정확히 같아야 합니다. "
+                     "'openai:' 접두어는 붙이지 마세요(자동 제거됨).",
+            )
+            api_key = st.text_input(
+                "API Key (선택)", type="password", value="",
+                help="키 인증이 필요한 서버만 입력. 없으면 비워두세요.",
+            )
+        else:
+            base_url = None
+            api_key = st.text_input(
+                "OpenAI API Key",
+                type="password",
+                value=os.getenv("OPENAI_API_KEY", ""),
+                help="sk-... 형식. 입력값은 이 세션에서만 사용됩니다.",
+            )
+            model = st.selectbox(
+                "모델",
+                ["gpt-4o", "gpt-4o-mini", "gpt-4.1", "gpt-4.1-mini"],
+                index=0,
+                help="비전(이미지) 입력을 지원하는 모델이어야 합니다.",
+            )
         st.divider()
         st.markdown("##### 📄 양식")
         xlsm_file = st.file_uploader(
@@ -359,7 +505,8 @@ def render_expense():
             label_visibility="collapsed",
             key=f"uploader_{st.session_state.get('uploader_ver', 0)}",
         )
-        # 사용자가 ✕로 제거한 파일은 무시(파일은 숨긴 업로더에 남아 있어도 앱에선 제외)
+        # 네이티브 칩 목록은 CSS로 숨기고(아래) 커스텀 목록만 노출한다.
+        # 사용자가 ✕로 제거한 파일은 ignored 집합으로 걸러낸다(숨긴 업로더엔 남아 있어도 앱에선 제외).
         ignored = st.session_state.setdefault("ignored_uploads", set())
         if images:
             images = [im for im in images if im.name not in ignored]
@@ -375,7 +522,7 @@ def render_expense():
                     continue
                 seen_names.add(im.name)
                 uniq.append(im)
-            images = uniq   # 이후 목록·미리보기·분석은 중복 제거된 것만 사용
+            images = uniq   # 이후 미리보기·분석은 중복 제거된 것만 사용
         if batch_dups:
             st.warning("같은 파일명이 중복으로 올라와 자동으로 첫 번째만 남기고 제외했어요: "
                        + ", ".join(batch_dups))
@@ -396,11 +543,11 @@ def render_expense():
             # 사진은 켤 때만 표시 — 매 편집마다 다시 그리지 않아 표 입력이 매끄러움.
             if st.toggle("사진 미리보기", value=False, key="show_thumbs",
                          help="켜면 업로드한 영수증 사진을 표시합니다. 표 편집이 느리면 꺼두세요."):
-                cols = st.columns(min(len(images), 5))
+                # 칸 수를 항상 5로 고정 — 1~2장이어도 왼쪽부터 좁은 칸에 나란히 붙도록
+                cols = st.columns(5, gap="small")
                 for i, img in enumerate(images):
                     with cols[i % len(cols)]:
-                        st.image(img.getvalue(), caption=img.name,
-                                 use_container_width=True)
+                        st.image(img.getvalue(), caption=img.name, width=180)
 
     # ---- 3. 분석 실행 (새로 추가된 사진만) -------------------------------
     with st.container(border=True):
@@ -420,11 +567,11 @@ def render_expense():
         with b1:
             run = st.button(
                 f"🔍 새 영수증 분석 ({len(pending)}장)",
-                type="primary", disabled=not pending, use_container_width=True,
+                type="primary", disabled=not pending, width='stretch',
             )
         with b2:
             if st.button("🗑️ 목록 초기화", disabled="df" not in st.session_state,
-                         use_container_width=True,
+                         width='stretch',
                          help="누적된 분석 결과를 모두 지우고 처음부터 다시 시작합니다."):
                 st.session_state.pop("df", None)
                 st.session_state["analyzed_keys"] = set()
@@ -439,8 +586,15 @@ def render_expense():
             st.info("먼저 위에서 영수증 사진을 올려주세요.")
 
         if run:
-            if not api_key:
-                st.error("사이드바에 OpenAI API Key를 입력하세요.")
+            err = None
+            if provider == "OpenAI" and not api_key:
+                err = "사이드바에 OpenAI API Key를 입력하세요."
+            elif provider == "로컬 서버" and not base_url:
+                err = "사이드바에 로컬 서버 주소(base_url)를 입력하세요."
+            elif provider == "로컬 서버" and not model:
+                err = "사이드바에 로컬 서버의 모델명을 입력하세요."
+            if err:
+                st.error(err)
             else:
                 payload = [(im.name, im.getvalue()) for im in pending]
                 progress = st.progress(0.0, text="분석 준비 중...")
@@ -449,8 +603,10 @@ def render_expense():
                     label = rec.get("store") or rec["filename"]
                     progress.progress(done / total, text=f"분석 중 {done}/{total} — {label}")
 
-                with st.spinner("GPT로 새 영수증을 분석하는 중..."):
-                    results = parse_many(payload, model=model, api_key=api_key, on_progress=_cb)
+                spin = "로컬 모델로" if provider == "로컬 서버" else "GPT로"
+                with st.spinner(f"{spin} 새 영수증을 분석하는 중..."):
+                    llm = _build_receipt_llm(provider, model, api_key, base_url)
+                    results = _parse_receipts(payload, llm, on_progress=_cb)
                 progress.empty()
 
                 new_df = _results_to_df(results)
@@ -476,45 +632,61 @@ def render_expense():
     # ---- 4. 검토/수정 표 -------------------------------------------------
     if "df" in st.session_state:
         with st.container(border=True):
-            step(4, "검토 및 수정",
-                 "셀을 더블클릭해 수정하세요. 날짜 YYYY-MM-DD, 시간 HH:MM. "
-                 "비용 청구는 목적별 한도 초과분이 생성 시 차감되고, "
-                 "복지비 청구는 한도까지 영수증 순서대로 청구금액이 자동으로 채워집니다.")
+            welfare = (bi_title == "복지비")
+            if welfare:
+                desc4 = ("복지비 청구는 한도까지 영수증 순서대로 청구금액이 자동으로 채워집니다. "
+                         "셀을 더블클릭해 수정하세요.")
+            else:
+                desc4 = ("비용 청구는 목적별 한도 초과분이 생성 시 차감됩니다. "
+                         "셀을 더블클릭해 수정하세요.")
+            step(4, "검토 및 수정", desc4)
             if not purpose_opts:
                 st.info("목적·결제방식 선택지를 채우려면 사이드바에서 비용청구 양식(.xlsm)을 업로드하세요.")
-            welfare = (bi_title == "복지비")
 
-            # 목적·결제방식을 모든 행에 한 번에 채우기 — 값을 누르면 즉시 전체 적용
-            def _apply_to_all(col, value):
+            # 목적·결제방식을 모든 행에 한 번에 채우기 — 고른 값(여러 열)을 한 번에 적용
+            def _apply_to_all(updates):
+                """updates: {열이름: 값} — 모든 행의 해당 열을 값으로 채운다."""
                 base = st.session_state.get("edited_snapshot")
                 if base is None or len(base) != len(st.session_state["df"]):
                     base = st.session_state["df"]
                 df2 = base.copy()
-                df2[col] = value
+                for col, value in updates.items():
+                    df2[col] = value
                 st.session_state["df"] = df2.reset_index(drop=True)
                 st.session_state.pop("edited_snapshot", None)
                 st.session_state["editor_ver"] = st.session_state.get("editor_ver", 0) + 1
 
+            # 표 바로 위 인라인 툴바 — 선택/클릭 즉시 모든 행에 적용(적용 버튼 없음)
+            # [일괄] 목적[▾] 결제방식[세그먼트]  · · · (여백)
+            def _bulk_apply_purpose():
+                v = st.session_state.get("bulk_purpose")
+                if v:
+                    _apply_to_all({"목적": v})
+
+            def _bulk_apply_pay():
+                v = st.session_state.get("bulk_pay")
+                if v:
+                    _apply_to_all({"결제방식": v})
+
             if purpose_opts or payment_opts:
-                with st.expander("⚡ 목적·결제방식 한 번에 채우기", expanded=False):
-                    st.caption("값을 고르고 적용하면 모든 행에 채워져요. "
-                               "이후 표에서 다른 행만 고치면 됩니다.")
+                with st.container(key="bulkbar"):
+                    tb = st.columns([0.6, 1.2, 3.0, 1.2], vertical_alignment="center")
+                    tb[0].markdown(
+                        "<div style='display:flex;align-items:center;height:34px;"
+                        "font-size:12px;font-weight:600;color:#555;'>일괄 채우기</div>",
+                        unsafe_allow_html=True)
                     if purpose_opts:
-                        st.markdown("**목적 일괄**")
-                        mc1, mc2 = st.columns([3, 1])
-                        pv = mc1.selectbox("목적 일괄", ["(선택 안 함)"] + purpose_opts,
-                                           key="bulk_purpose", label_visibility="collapsed")
-                        if mc2.button("적용", use_container_width=True,
-                                      disabled=(pv == "(선택 안 함)")):
-                            _apply_to_all("목적", pv)
-                            st.rerun()
+                        tb[1].selectbox(
+                            "목적 일괄", purpose_opts, key="bulk_purpose",
+                            index=None, placeholder="목적 선택", label_visibility="collapsed",
+                            on_change=_bulk_apply_purpose,
+                            help="고르면 모든 행의 목적에 바로 채워져요. 이후 표에서 다른 행만 고치면 됩니다.")
                     if payment_opts:
-                        st.markdown("**결제방식 일괄**")
-                        pcols = st.columns(len(payment_opts))
-                        for c, opt in zip(pcols, payment_opts):
-                            if c.button(opt, key=f"bulkpay_{opt}", use_container_width=True):
-                                _apply_to_all("결제방식", opt)
-                                st.rerun()
+                        tb[2].segmented_control(
+                            "결제방식 일괄", payment_opts, key="bulk_pay",
+                            selection_mode="single", label_visibility="collapsed",
+                            on_change=_bulk_apply_pay,
+                            help="클릭하면 모든 행의 결제방식에 바로 채워져요.")
 
             # 복지비 모드에선 청구금액을 표에서 숨긴다(자동 배분이라 수정 불가).
             # 표 아래에 별도 미리보기로 보여줘, 편집 표 입력을 건드리지 않으므로 선택이 풀리지 않는다.
@@ -526,7 +698,7 @@ def render_expense():
             # → 매 rerun마다 원본을 되써넣지 않으므로 목적·결제방식 선택이 풀리지 않는다.
             edited = st.data_editor(
                 st.session_state["df"],
-                use_container_width=True,
+                width='stretch',
                 num_rows="dynamic",
                 key=f"review_editor_{st.session_state.get('editor_ver', 0)}",
                 column_config={
@@ -559,7 +731,7 @@ def render_expense():
                 preview = edited[["영수일자", "거래처명", "영수금액"]].copy()
                 preview["복지비 청구금액"] = alloc
                 st.caption("아래는 영수일자 순으로 한도까지 자동 배분된 청구금액 미리보기예요.")
-                st.dataframe(preview, use_container_width=True, hide_index=True)
+                st.dataframe(preview, width='stretch', hide_index=True)
             else:
                 # 목적별 한도 보정은 '생성' 시 적용 — 초과 건수만 안내
                 over = 0
@@ -644,7 +816,7 @@ def render_expense():
                         "(기본 양식이 폴더에 있으면 자동으로 사용됩니다)")
             else:
                 if st.button("📥 비용청구서 생성", type="primary",
-                             use_container_width=True,
+                             width='stretch',
                              help="작성시트 첫 줄부터 채워 비용청구서를 만듭니다."):
                     _do_generate(append=False)
 
@@ -654,13 +826,13 @@ def render_expense():
                     if st.session_state.get("gen_preview") is not None:
                         st.caption("📋 생성된 청구서에 채워진 내용 미리보기 (다운로드 전 확인용)")
                         st.dataframe(st.session_state["gen_preview"],
-                                     use_container_width=True, hide_index=True)
+                                     width='stretch', hide_index=True)
                     st.download_button(
                         "⬇️ 완성된 비용청구서 다운로드",
                         data=st.session_state["gen_buf"],
                         file_name=st.session_state["gen_name"],
                         mime="application/vnd.ms-excel.sheet.macroEnabled.12",
-                        use_container_width=True,
+                        width='stretch',
                     )
                     st.divider()
                     st.button("🆕 새로 작성 (전체 초기화)", on_click=_reset_all,
@@ -760,7 +932,7 @@ def render_overtime():
         ]).astype(str)
         edited = st.data_editor(
             table,
-            use_container_width=True,
+            width='stretch',
             hide_index=True,
             disabled=["일자", "출근", "퇴근", "근무시작(출근+9h)", "근무종료", "승인초과"],
             column_config={
@@ -782,7 +954,7 @@ def render_overtime():
                     "(기본 양식이 폴더에 있으면 자동으로 사용됩니다)")
             return
 
-        if st.button("📥 신청서 생성", type="primary", use_container_width=True):
+        if st.button("📥 신청서 생성", type="primary", width='stretch'):
             # 표에서 고른 대체휴무지급/대체휴무시간/비고를 일자별로 모은다.
             extras = {}
             for rec, (_, row) in zip(records, edited.iterrows()):
@@ -808,7 +980,7 @@ def render_overtime():
                 data=buf,
                 file_name=out_name,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True,
+                width='stretch',
             )
 
 
