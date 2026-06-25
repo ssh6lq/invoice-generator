@@ -122,38 +122,52 @@ def inject_css(_t):
         .block-container { padding-top: 2.4rem; max-width: 1100px; }
         header[data-testid="stHeader"] { background: transparent; }
 
-        /* 히어로 영역 */
+        /* 히어로 영역 — 상단 메타 줄(탭이 이 바로 밑에 온다) */
         .ed-hero {
             border-top: 2px solid #3182f6;
-            padding-top: 16px; padding-bottom: 16px;
-            border-bottom: 1px solid #e5e8eb; margin-bottom: 20px;
+            padding-top: 16px; padding-bottom: 0;
+            margin-bottom: 0;
         }
-        .ed-hero .meta { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+        .ed-hero .meta { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
         .ed-hero .appname { font-size: 12px; font-weight: 600; color: #191f28; }
         .ed-hero .vdiv { display: inline-block; width: 1px; height: 11px;
             background: #ccc; vertical-align: middle; }
         .ed-hero .sub { font-size: 12px; color: #999; }
-        .ed-hero .bottom { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-        .ed-hero .headline { font-size: 22px; font-weight: 600;
-            color: #191f28; line-height: 1.35; white-space: pre-line; }
-        .ed-hero .tag { font-size: 11px; font-weight: 500; color: #666;
-            border: 1px solid #dde2e8; padding: 4px 12px; border-radius: 20px;
-            white-space: nowrap; margin-top: 4px; }
+        /* 탭 아래 헤드라인 */
+        .ed-headline { font-size: 22px; font-weight: 600;
+            color: #191f28; line-height: 1.35; white-space: pre-line;
+            padding-top: 16px; margin-bottom: 20px; }
 
         /* 단계 헤더 */
         .step { display: flex; align-items: baseline; gap: 10px; margin: .3rem 0 .15rem; }
         .step .num { font-size: 11px; font-weight: 500; color: #aaa; min-width: 20px; }
         .step .ttl { font-size: 15px; font-weight: 600; color: #191f28; }
 
-        /* 버튼 */
+        /* 버튼 — 굵기 낮추고 라운드 키워 더 매끈하게 + 부드러운 전환 */
         .stButton > button, .stDownloadButton > button {
-            border-radius: 8px; font-weight: 600; padding: .45rem 1rem;
+            border-radius: 10px; font-weight: 500; padding: .55rem 1rem;
+            transition: background .15s ease, box-shadow .15s ease,
+                        border-color .15s ease, transform .1s ease;
         }
         .stButton > button[kind="primary"], .stDownloadButton > button {
             background: #3182f6; border: none; color: #fff;
         }
+        /* 주행동(솔리드) 버튼 호버 — 살짝 떠오르고 연한 파란 그림자 */
         .stButton > button[kind="primary"]:hover, .stDownloadButton > button:hover {
-            background: #1b64da;
+            background: #1b64da; box-shadow: 0 4px 14px rgba(49,130,246,.32);
+            transform: translateY(-1px);
+        }
+        .stButton > button[kind="primary"]:active, .stDownloadButton > button:active {
+            transform: translateY(0); box-shadow: none;
+        }
+        /* 아웃라인(보조) 버튼 — 흰 배경 + 파란 글자/테두리 (다운로드) */
+        .st-key-dl_save_btn button, .st-key-ot_dl_btn button {
+            background: #fff !important; color: #1b64da !important;
+            border: 1px solid #c7dcfa !important; font-weight: 500 !important;
+        }
+        .st-key-dl_save_btn button:hover, .st-key-ot_dl_btn button:hover {
+            background: #eef4fe !important; border-color: #3182f6 !important;
+            box-shadow: 0 4px 14px rgba(49,130,246,.18) !important; transform: translateY(-1px);
         }
         /* 비활성(예: 올린 사진 0장)일 때는 회색으로 — 누를 수 없음을 분명히 */
         .stButton > button[kind="primary"]:disabled,
@@ -162,6 +176,18 @@ def inject_css(_t):
             background: #e9edf2 !important; color: #aab2bd !important;
             cursor: not-allowed !important;
         }
+        /* 저장 완료 — 클릭하면 폴더가 열리는 초록 배너형 버튼 */
+        .st-key-open_saved_folder button {
+            background: #eef8f1 !important; border: 1px solid #c6e6d2 !important;
+            color: #2e7d32 !important; font-weight: 500 !important;
+            justify-content: flex-start !important; text-align: left !important;
+            border-radius: 8px !important; padding: 12px 16px !important;
+            min-height: 0 !important; box-shadow: none !important; white-space: normal !important;
+        }
+        .st-key-open_saved_folder button:hover {
+            background: #e2f3e8 !important; border-color: #3182f6 !important; color: #1b6e26 !important;
+        }
+        .st-key-open_saved_folder button:active { transform: none !important; }
 
         /* 지표 카드 */
         div[data-testid="stMetric"] {
@@ -217,24 +243,35 @@ def inject_css(_t):
             min-height: 34px !important; height: 34px !important;
             padding-top: 0 !important; padding-bottom: 0 !important;
         }
-        /* 헤드라인 아래 '작업 선택' — 토스풍 pill 토글(연회색 트랙 + 선택 시 흰 알약) */
-        .st-key-mode_select { margin: 2px 0 22px; }
+        /* 메타 줄 바로 밑 '작업 선택' — 전체 너비 균등 분할 + 선택 탭 파란 밑줄 강조 */
+        /* 핵심: 엘리먼트 컨테이너 자체가 콘텐츠 너비로 줄어들어 width:100%를 강제해야 함 */
+        .st-key-mode_select { margin: 6px 0 0 !important; width: 100% !important; }
         .st-key-mode_select div[data-testid="stButtonGroup"] {
-            display: inline-flex !important; gap: 4px !important;
-            background: #eaeef3 !important; padding: 4px !important; border-radius: 12px !important;
+            display: flex !important; gap: 0 !important;
+            width: 100% !important; max-width: none !important;
+            background: transparent !important; padding: 0 !important; border-radius: 0 !important;
+            border-bottom: 1px solid #e5e8eb !important;
+        }
+        /* 세그먼트 버튼이 래퍼(max-width:fit-content)로 감싸여 있어 균등 분할 안 됨 → 래퍼까지 풀어줌 */
+        .st-key-mode_select div[data-testid="stButtonGroup"] > * {
+            flex: 1 1 0 !important; min-width: 0 !important;
+            width: 100% !important; max-width: none !important;
         }
         .st-key-mode_select button[data-testid^="stBaseButton-segmented_control"] {
-            min-height: 38px !important; height: 38px !important;
-            padding: 0 24px !important; font-size: 14px !important; font-weight: 600 !important;
-            border: none !important; background: transparent !important;
-            color: #5e6b7b !important; border-radius: 9px !important;
+            flex: 1 1 0 !important; width: 100% !important;
+            min-height: 44px !important; height: 44px !important;
+            padding: 0 !important; font-size: 14px !important; font-weight: 600 !important;
+            border: none !important; border-bottom: 2px solid transparent !important;
+            background: transparent !important; margin-bottom: -1px !important;
+            color: #5e6b7b !important; border-radius: 0 !important;
         }
         .st-key-mode_select button[data-testid^="stBaseButton-segmented_control"]:hover {
-            color: #191f28 !important; background: rgba(255,255,255,.5) !important;
+            color: #191f28 !important; background: transparent !important;
         }
         .st-key-mode_select button[data-testid="stBaseButton-segmented_controlActive"] {
-            background: #ffffff !important; color: #1b64da !important;
-            box-shadow: 0 1px 3px rgba(16,40,80,.14) !important;
+            background: transparent !important; color: #1b64da !important;
+            border-bottom: 2px solid #3182f6 !important;
+            box-shadow: none !important;
         }
         /* 일괄 툴바 '일괄 채우기' 라벨 — 마크다운 기본 여백 제거 + 세로 중앙 */
         .st-key-bulkbar [data-testid="stMarkdownContainer"],
@@ -266,16 +303,8 @@ def inject_css(_t):
             border-color: #3182f6 !important; background: #eef4fe !important; color: #1b64da !important;
         }
 
-        /* 영수증 업로더: 네이티브 칩 목록만 숨기고(커스텀 목록만 노출),
-           기본 업로드 안내문(아이콘·Browse·용량)은 그대로 유지한다. */
-        .st-key-receipt_box [data-testid="stFileChips"] { display: none !important; }
-        .st-key-receipt_box [data-testid="stFileUploaderFile"] { display: none !important; }
-        /* 칩 목록을 숨기면서 딸려오는 'Showing page x of y' 페이지네이션도 숨김 */
-        .st-key-receipt_box [data-testid="stFileUploaderPagination"] { display: none !important; }
-        /* 파일이 올라가 있어도 기본 안내문이 사라지지 않도록 강제로 표시 */
-        .st-key-receipt_box [data-testid="stFileUploaderDropzoneInstructions"] {
-            display: flex !important;
-        }
+        /* 가운데 정렬 드롭존(클라우드 아이콘 + 안내문 + '파일 선택' 버튼) CSS는
+           컨테이너 key별로 inject_dropzone_css() 헬퍼가 주입한다(영수증/근태현황 공용). */
 
         /* 업로드 파일 목록 */
         .file-lines { margin: .3rem 0 1rem; display: flex; flex-direction: column; gap: 4px; }
@@ -409,7 +438,122 @@ def inject_css(_t):
     )
 
 
-def hero(t):
+def _pick_directory(initial=None):
+    """네이티브 폴더 선택 대화상자(탐색기)를 띄워 선택한 경로를 돌려준다.
+    이 앱이 사용자의 PC에서 로컬로 실행될 때만 동작한다. 취소하거나, 서버 환경처럼
+    창을 띄울 수 없으면 None을 반환한다(이 경우 경로는 직접 입력하면 된다)."""
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+        root = tk.Tk()
+        root.withdraw()
+        root.wm_attributes("-topmost", True)  # 다른 창에 가리지 않게 맨 앞으로
+        path = filedialog.askdirectory(
+            initialdir=initial or os.path.expanduser("~"),
+            title="비용청구서를 저장할 폴더 선택")
+        root.update()
+        root.destroy()
+        return path or None
+    except Exception:  # noqa: BLE001 - tkinter 미지원/원격 환경 등
+        return None
+
+
+_DROPZONE_CSS = """<style>
+/* ── 가운데 정렬 드롭존(클라우드 아이콘 + 안내문 + '파일 선택' 버튼) ──
+   ⚠️ 파일이 올라가면 Streamlit이 드롭존 내용을 통째로 교체한다.
+      · 첨부 전: [Upload 버튼(secondary)] + [stFileUploaderDropzoneInstructions]
+      · 첨부 후: [stFileChips( 숨긴 칩 + 추가(+)버튼=borderlessIcon )]  ← 안내문 elem 사라짐
+   두 상태가 서로 다른 DOM이라, 같은 모습이 되도록 각각 pseudo-element로 텍스트를 복제한다.
+   파일 목록은 별도 커스텀 목록으로 아래에 노출하므로 네이티브 칩은 숨긴다. */
+.st-key-KEY [data-testid="stFileUploaderDropzone"] {
+    display: flex !important; flex-direction: column !important;
+    align-items: center !important; justify-content: center !important;
+    text-align: center !important; gap: 10px !important; padding: 26px 18px !important;
+}
+.st-key-KEY [data-testid="stFileUploaderDropzone"]::before {
+    content: "cloud_upload"; font-family: "Material Symbols Rounded" !important;
+    font-feature-settings: 'liga' 1 !important;
+    font-size: 30px !important; color: #3182f6 !important; line-height: 1 !important; order: 0;
+}
+.st-key-KEY [data-testid="stFileUploaderDropzoneInstructions"] {
+    display: flex !important; flex-direction: column !important;
+    align-items: center !important; gap: 4px !important; order: 1;
+}
+.st-key-KEY [data-testid="stFileUploaderDropzoneInstructions"] > div { display: none !important; }
+.st-key-KEY [data-testid="stFileUploaderDropzoneInstructions"]::before {
+    content: "HEADLINE"; font-size: 15px; font-weight: 500; color: #191f28;
+}
+.st-key-KEY [data-testid="stFileUploaderDropzoneInstructions"]::after {
+    content: "SUBTEXT"; font-size: 13px; color: #98a2b3;
+}
+.st-key-KEY [data-testid="stFileUploaderDropzone"] > span { order: 2; }
+.st-key-KEY [data-testid="stFileUploaderDropzone"] button[data-testid="stBaseButton-secondary"] > div {
+    display: none !important;
+}
+.st-key-KEY [data-testid="stFileUploaderDropzone"] button[data-testid="stBaseButton-secondary"]::after {
+    content: "파일 선택"; font-size: 14px; font-weight: 500;
+}
+.st-key-KEY [data-testid="stFileChips"] {
+    display: flex !important; flex-direction: column !important; align-items: center !important;
+    gap: 6px !important; width: auto !important; order: 1;
+    max-height: none !important; overflow: visible !important;
+}
+.st-key-KEY [data-testid="stFileChip"] { display: none !important; }
+.st-key-KEY [data-testid="stFileUploaderFile"] { display: none !important; }
+.st-key-KEY [data-testid="stFileChips"] > div { display: none !important; }
+.st-key-KEY [data-testid="stFileChips"]::before {
+    content: "HEADLINE"; font-size: 15px; font-weight: 500; color: #191f28; order: 0;
+}
+.st-key-KEY [data-testid="stFileChips"]::after {
+    content: "SUBTEXT"; font-size: 13px; color: #98a2b3; order: 1;
+}
+.st-key-KEY [data-testid="stFileUploaderPagination"] { display: none !important; }
+.st-key-KEY button[data-testid="stBaseButton-borderlessIcon"] {
+    display: inline-flex !important; align-items: center !important; justify-content: center !important;
+    width: auto !important; min-width: 0 !important; height: 38px !important; margin-top: 4px;
+    padding: 0 18px !important; border: 1px solid #dde2e8 !important; border-radius: 8px !important;
+    background: #fff !important; color: #191f28 !important; font-weight: 500 !important;
+    white-space: nowrap !important; order: 2;
+}
+.st-key-KEY button[data-testid="stBaseButton-borderlessIcon"] > div { display: none !important; }
+.st-key-KEY button[data-testid="stBaseButton-borderlessIcon"]::after {
+    content: "파일 선택"; font-size: 14px; font-weight: 500;
+}
+.st-key-KEY button[data-testid="stBaseButton-borderlessIcon"]:hover {
+    border-color: #3182f6 !important; background: #eef4fe !important; color: #1b64da !important;
+}
+</style>"""
+
+
+def inject_dropzone_css(key, headline, subtext):
+    """컨테이너(st.container(key=...))의 파일 업로더를 가운데 정렬 드롭존으로 스타일링한다.
+    영수증·근태현황 등 여러 업로더가 같은 모습을 갖도록 공용으로 사용한다."""
+    st.markdown(
+        _DROPZONE_CSS.replace("KEY", key)
+        .replace("HEADLINE", headline).replace("SUBTEXT", subtext),
+        unsafe_allow_html=True,
+    )
+
+
+def _open_in_explorer(path):
+    """파일 탐색기를 열어 해당 파일을 선택해 보여준다(로컬 실행 전용, Windows).
+    파일 선택이 안 되면 폴더만이라도 연다. 원격/비Windows면 조용히 무시한다."""
+    try:
+        import subprocess
+        norm = os.path.normpath(path)
+        if os.path.exists(norm):
+            subprocess.Popen(["explorer", "/select,", norm])  # 파일 선택 상태로 폴더 열기
+        else:
+            os.startfile(os.path.dirname(norm))  # noqa: S606 - 로컬 사용자 동작
+    except Exception:  # noqa: BLE001
+        try:
+            os.startfile(os.path.dirname(os.path.normpath(path)))  # noqa: S606
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def hero_top(t):
+    """상단 메타 줄(앱 이름 · 부제)만 렌더 — 탭이 이 바로 밑에 온다."""
     st.markdown(
         '<div class="ed-hero">'
         '<div class="meta">'
@@ -417,23 +561,28 @@ def hero(t):
         '<span class="vdiv"></span>'
         '<span class="sub">영수증 인식 · 양식 자동완성</span>'
         '</div>'
-        '<div class="bottom">'
-        f'<div class="headline">{t["headline"]}</div>'
-        f'<span class="tag">{t["tag"]}</span>'
-        '</div>'
         '</div>',
         unsafe_allow_html=True,
     )
 
 
+def hero_headline(t):
+    """선택된 작업에 맞는 헤드라인 — 탭 아래에 렌더."""
+    st.markdown(
+        f'<div class="ed-headline">{t["headline"]}</div>',
+        unsafe_allow_html=True,
+    )
+
+
 def page_header(t):
-    """헤드라인(hero) + 작업 선택 탭을 본문 최상단에 함께 렌더한다.
-    탭을 헤더가 아닌 본문 흐름에 두어 상단 헤더에 가리지 않게 한다."""
-    hero(t)
+    """상단 메타 → 작업 선택 탭 → 헤드라인 순으로 렌더한다.
+    탭을 '청구서 자동 작성' 줄 바로 밑에 두어 모드 선택이 먼저 보이게 한다."""
+    hero_top(t)
     st.segmented_control(
         "작업 선택", MODE_OPTIONS,
         key="mode_select", label_visibility="collapsed",
     )
+    hero_headline(t)
 
 
 def step(n, title, desc=None):
@@ -647,6 +796,9 @@ def render_expense():
         bi_name = ci3.text_input("성명", key=f"bi_name_{fv}")
 
     # ---- 2. 영수증 업로드 ------------------------------------------------
+    inject_dropzone_css(
+        "receipt_box", "영수증 사진을 끌어다 놓거나 선택하세요",
+        "JPG · PNG · WEBP · BMP · 파일당 최대 200MB")
     with st.container(border=True, key="receipt_box"):
         step(2, "영수증 이미지 업로드",
              "여러 장을 한 번에 올릴 수 있어요. 분석한 뒤 사진을 더 추가해도 됩니다.")
@@ -683,6 +835,10 @@ def render_expense():
                        + ", ".join(already_dups))
         if images:
             st.caption(f"🖼️ {len(images)}장 업로드됨 (중복 제외)")
+            # ✕ 제거는 곧바로 st.rerun() 하지 않고 이름만 기록해 둔다.
+            # (여기서 즉시 rerun하면 아래 '사진 미리보기' 토글이 렌더되기 전에 실행이 끊겨
+            #  토글 위젯 상태가 초기화 → 미리보기가 통째로 사라지는 버그가 생김)
+            pending_remove = None
             for i, im in enumerate(images, 1):
                 lc, rc = st.columns([0.93, 0.07])
                 lc.markdown(
@@ -690,12 +846,12 @@ def render_expense():
                     f'<span class="nm">{html.escape(im.name)}</span></div>',
                     unsafe_allow_html=True)
                 if rc.button("✕", key=f"rm_{im.name}", help="이 파일을 목록에서 제거"):
-                    ignored.add(im.name)
-                    st.rerun()
+                    pending_remove = im.name
             # 사진은 켤 때만 표시 — 매 편집마다 다시 그리지 않아 표 입력이 매끄러움.
+            # 토글은 제거가 예약돼 있어도 항상 렌더해야 상태(켜짐)가 유지된다.
             if st.toggle("사진 미리보기", value=False, key="show_thumbs",
                          help="켜면 업로드한 영수증 사진을 표시합니다. 사진을 클릭하면 새 탭에 원본이 열립니다. "
-                              "표 편집이 느리면 꺼두세요."):
+                              "표 편집이 느리면 꺼두세요.") and not pending_remove:
                 # 새 탭으로 data: URL을 열면 브라우저가 보안상 차단(빈 '무제' 탭)하므로,
                 # 같은 페이지 위에 원본을 띄우는 CSS :target 라이트박스를 쓴다.
                 # 썸네일은 #lb-i 로 링크 → 해당 오버레이가 나타나고, 바깥/✕ 클릭(#_)으로 닫힌다.
@@ -720,6 +876,10 @@ def render_expense():
                     + "".join(boxes),
                     unsafe_allow_html=True,
                 )
+            # 토글까지 모두 렌더한 뒤에야 제거를 반영하고 새로고침한다(토글 상태 보존).
+            if pending_remove:
+                ignored.add(pending_remove)
+                st.rerun()
 
     # ---- 3. 분석 실행 (새로 추가된 사진만) -------------------------------
     with st.container(border=True):
@@ -738,7 +898,7 @@ def render_expense():
         b1, b2 = st.columns([3, 1])
         with b1:
             run = st.button(
-                f"🔍 새 영수증 분석 ({len(pending)}장)",
+                f":material/search: 새 영수증 분석 ({len(pending)}장)",
                 type="primary", disabled=not pending, width='stretch',
             )
         with b2:
@@ -924,6 +1084,16 @@ def render_expense():
             def _do_generate(append):
                 """편집된 표로 비용청구서를 채워 결과를 세션에 저장한다.
                 append=False 면 첫 줄부터 새로, True 면 기존 내용 뒤에 이어서 작성."""
+                # 기초정보(소속부서명·성명) 미입력 시 생성하지 않고 안내한다.
+                missing = []
+                if not (bi_dept or "").strip():
+                    missing.append("소속부서명")
+                if not (bi_name or "").strip():
+                    missing.append("성명")
+                if missing:
+                    st.warning("먼저 1단계 ‘기초정보 입력’에서 "
+                               f"{' · '.join(missing)}을(를) 입력해 주세요.")
+                    return
                 alloc = _welfare_fill(edited, welfare_budget) if welfare else None
                 records = []
                 for i, (_, row) in enumerate(edited.iterrows()):
@@ -952,7 +1122,7 @@ def render_expense():
                     _to_date(r.get("date")) is None,
                     _to_date(r.get("date")) or datetime.max.date(),
                 ))
-                buf, start, n = fill_workbook(
+                buf, _start, n = fill_workbook(
                     tpl_bytes, records, append=append,
                     basic_info={"dept": bi_dept, "name": bi_name, "title": bi_title},
                 )
@@ -960,7 +1130,8 @@ def render_expense():
                 base = os.path.splitext(tpl_name)[0]
                 st.session_state["gen_buf"] = buf.getvalue()
                 st.session_state["gen_name"] = f"{base}_작성완료_{stamp}.xlsm"
-                st.session_state["gen_msg"] = f"작성시트 {start}행부터 {n}건을 채웠습니다."
+                st.session_state["gen_msg"] = f"비용 내역 {n}건을 작성했어요."
+                st.session_state.pop("last_saved_path", None)  # 새로 생성 시 이전 저장 경로 비움
                 # 다운로드 전 미리보기용: 실제 작성시트에 채워진 내용을 표로 보관
                 st.session_state["gen_preview"] = pd.DataFrame([{
                     "영수일자": r["date"], "거래처명": r["store"], "목적": r["purpose"],
@@ -975,7 +1146,7 @@ def render_expense():
                 (위젯 값 초기화는 콜백에서 처리 — 위젯 생성 전에 실행되어야 안전)"""
                 for k in ("prev_title", "show_thumbs", "df", "edited_snapshot",
                           "gen_buf", "gen_name", "gen_msg", "gen_preview",
-                          "ignored_uploads"):
+                          "last_saved_path", "ignored_uploads"):
                     st.session_state.pop(k, None)
                 st.session_state["analyzed_keys"] = set()
                 # key를 바꿔 입력칸·업로더·편집표를 새 위젯으로 갈아끼워 확실히 비운다
@@ -987,7 +1158,7 @@ def render_expense():
                 st.info("사이드바에서 비용청구 양식(.xlsm)을 먼저 업로드하세요. "
                         "(기본 양식이 폴더에 있으면 자동으로 사용됩니다)")
             else:
-                if st.button("📥 비용청구서 생성", type="primary",
+                if st.button(":material/receipt_long: 비용청구서 생성", type="primary",
                              width='stretch',
                              help="작성시트 첫 줄부터 채워 비용청구서를 만듭니다."):
                     _do_generate(append=False)
@@ -1002,13 +1173,44 @@ def render_expense():
                         st.caption("📋 생성된 청구서에 채워진 내용 미리보기 (다운로드 전 확인용)")
                         st.dataframe(st.session_state["gen_preview"],
                                      width='stretch', hide_index=True)
-                    st.download_button(
-                        "⬇️ 완성된 비용청구서 다운로드",
-                        data=st.session_state["gen_buf"],
-                        file_name=st.session_state["gen_name"],
-                        mime="application/vnd.ms-excel.sheet.macroEnabled.12",
-                        width='stretch',
-                    )
+                    # 다운로드 = 폴더 선택창을 띄워 → 고른 폴더에 직접 저장.
+                    # 브라우저를 거치지 않아 'Mark of the Web'가 안 붙어 매크로 경고가 없다.
+                    _default_dir = os.path.join(os.path.expanduser("~"), "Downloads")
+
+                    def _download_to_folder():
+                        st.session_state.pop("save_error", None)
+                        chosen = _pick_directory(
+                            st.session_state.get("save_dir_path") or _default_dir)
+                        if not chosen:   # 취소했거나 창을 띄울 수 없으면 아무것도 안 함
+                            return
+                        st.session_state["save_dir_path"] = chosen
+                        try:
+                            os.makedirs(chosen, exist_ok=True)
+                            out_path = os.path.join(chosen, st.session_state["gen_name"])
+                            with open(out_path, "wb") as fp:
+                                fp.write(st.session_state["gen_buf"])
+                            st.session_state["last_saved_path"] = out_path
+                        except Exception as e:  # noqa: BLE001
+                            st.session_state["last_saved_path"] = None
+                            st.session_state["save_error"] = str(e)
+
+                    st.button(":material/download: 완성된 비용청구서 다운로드",
+                              key="dl_save_btn", width='stretch',
+                              on_click=_download_to_folder,
+                              help="폴더를 선택하면 그 폴더에 바로 저장됩니다. "
+                                   "브라우저를 거치지 않아 매크로 차단 경고가 뜨지 않아요.")
+
+                    if st.session_state.get("save_error"):
+                        st.error(f"저장 실패: {st.session_state['save_error']}")
+
+                    # 저장 완료 — 초록 배너 자체가 버튼. 누르면 저장한 폴더가 열린다.
+                    if st.session_state.get("last_saved_path"):
+                        _sp = st.session_state["last_saved_path"]
+                        st.button(f"📂 저장 완료 · {_sp}",
+                                  key="open_saved_folder", width='stretch',
+                                  on_click=_open_in_explorer, args=(_sp,),
+                                  help="클릭하면 저장한 파일이 있는 폴더가 열립니다.")
+
                     st.divider()
                     st.button("🆕 새로 작성 (전체 초기화)", on_click=_reset_all,
                               help="소속·성명·복지비·영수증·검토표를 모두 비우고 "
@@ -1038,7 +1240,10 @@ def render_overtime():
                    "근무종료 = 퇴근시간. 근무시간·신청시간은 양식 수식이 자동 계산.")
 
     # ---- 1. 근태 미리보기 ------------------------------------------------
-    with st.container(border=True):
+    inject_dropzone_css(
+        "att_box", "근태현황 파일을 끌어다 놓거나 선택하세요",
+        "XLSX · 파일당 최대 200MB")
+    with st.container(border=True, key="att_box"):
         step(1, "근태현황 업로드 및 미리보기",
              "월간 근태현황(.xlsx)을 올리면 연장근무 대상일을 자동으로 찾아 보여줍니다.")
         att_file = st.file_uploader(
@@ -1129,7 +1334,7 @@ def render_overtime():
                     "(기본 양식이 폴더에 있으면 자동으로 사용됩니다)")
             return
 
-        if st.button("신청서 생성", type="primary", width='stretch',
+        if st.button(":material/receipt_long: 신청서 생성", type="primary", width='stretch',
                      help="대체휴무 입력을 반영해 연장근무신청서를 채웁니다."):
             # 표에서 고른 대체휴무지급/대체휴무시간/비고를 일자별로 모은다.
             extras = {}
@@ -1162,11 +1367,11 @@ def render_overtime():
                 f"{st.session_state['ot_count']}건 반영 · {st.session_state['ot_name']}",
             )
             st.download_button(
-                "⬇️ 완성된 신청서 다운로드",
+                ":material/download: 완성된 신청서 다운로드",
                 data=st.session_state["ot_buf"],
                 file_name=st.session_state["ot_name"],
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                width='stretch',
+                key="ot_dl_btn", width='stretch',
             )
 
 
