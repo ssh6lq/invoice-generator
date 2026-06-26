@@ -707,8 +707,24 @@ def render_expense():
     page_header(theme)
 
     with st.sidebar:
-        # AI 모델 연결 설정은 IT 담당자가 한 번 맞춰두는 값이라, 일반 사용자 화면을
-        # 깔끔하게 유지하려고 접이식(기본 닫힘) '고급 설정'으로 숨긴다.
+        # 양식 — 환경 설정보다 위에 배치. 기본 양식을 쓰는 경우가 대부분이라
+        # 업로드 칸은 작은 '양식 변경' 접이식 안에 숨기고, 사용 중인 양식만 표시한다.
+        st.markdown("##### 📄 양식")
+        with st.expander("양식 변경 (다른 파일 사용)", expanded=False):
+            xlsm_file = st.file_uploader(
+                "비용청구 양식(.xlsm)", type=["xlsm", "xlsx"],
+                label_visibility="collapsed",
+                help="비워두면 기본 제공 양식(비용청구양식.xlsm)을 자동으로 사용합니다.",
+            )
+        tpl_bytes, tpl_name, tpl_is_default = _template_bytes_name(
+            xlsm_file, DEFAULT_EXPENSE_TPL)
+        if tpl_is_default:
+            st.caption(f"✅ 기본 양식 사용 중: **{tpl_name}**")
+        elif tpl_bytes is None:
+            st.caption("⚠️ 기본 양식을 찾지 못했습니다. ‘양식 변경’에서 업로드하세요.")
+        st.divider()
+
+        # 환경 설정 — AI 모델 연결(보통 IT 담당자가 1회 설정). 양식 아래로 이동.
         with st.expander("⚙️ 환경 설정", expanded=False):
             st.caption("AI 모델 연결 설정이에요. 보통 IT 담당자가 처음 한 번만 맞춰두면 됩니다.")
             provider = st.radio(
@@ -745,18 +761,6 @@ def render_expense():
                     index=0,
                     help="비전(이미지) 입력을 지원하는 모델이어야 합니다.",
                 )
-        st.divider()
-        st.markdown("##### 📄 양식")
-        xlsm_file = st.file_uploader(
-            "비용청구 양식(.xlsm)", type=["xlsm", "xlsx"],
-            help="비워두면 기본 제공 양식(비용청구양식.xlsm)을 자동으로 사용합니다.",
-        )
-        tpl_bytes, tpl_name, tpl_is_default = _template_bytes_name(
-            xlsm_file, DEFAULT_EXPENSE_TPL)
-        if tpl_is_default:
-            st.caption(f"✅ 기본 양식 사용 중: **{tpl_name}**")
-        elif tpl_bytes is None:
-            st.caption("⚠️ 기본 양식을 찾지 못했습니다. 양식을 업로드하세요.")
     # 양식에서 목적/결제방식 드롭다운 목록 + 목적별 지원한도를 추출해 둔다.
     purpose_opts, payment_opts, support_limits = [], [], {}
     if tpl_bytes is not None:
@@ -1225,16 +1229,18 @@ def render_overtime():
 
     with st.sidebar:
         st.markdown("##### 📄 양식")
-        tpl_file = st.file_uploader(
-            "연장근무(수당)신청서 양식(.xlsx)", type=["xlsx"],
-            help="비워두면 기본 제공 양식(연장근무(수당)신청서_양식.xlsx)을 자동으로 사용합니다.",
-        )
+        with st.expander("양식 변경 (다른 파일 사용)", expanded=False):
+            tpl_file = st.file_uploader(
+                "연장근무(수당)신청서 양식(.xlsx)", type=["xlsx"],
+                label_visibility="collapsed",
+                help="비워두면 기본 제공 양식(연장근무(수당)신청서_양식.xlsx)을 자동으로 사용합니다.",
+            )
         tpl_bytes, tpl_name, tpl_is_default = _template_bytes_name(
             tpl_file, DEFAULT_OVERTIME_TPL)
         if tpl_is_default:
             st.caption(f"✅ 기본 양식 사용 중: **{tpl_name}**")
         elif tpl_bytes is None:
-            st.caption("⚠️ 기본 양식을 찾지 못했습니다. 양식을 업로드하세요.")
+            st.caption("⚠️ 기본 양식을 찾지 못했습니다. ‘양식 변경’에서 업로드하세요.")
         st.divider()
         st.caption("규칙: 근무시작 = 출근시간 + 9시간(정규8h+점심1h), "
                    "근무종료 = 퇴근시간. 근무시간·신청시간은 양식 수식이 자동 계산.")
