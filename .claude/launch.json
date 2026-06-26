@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "invoice-app",
+      "runtimeExecutable": ".venv\\Scripts\\python.exe",
+      "runtimeArgs": ["-m", "streamlit", "run", "app.py", "--server.port", "8502", "--server.headless", "true"],
+      "port": 8502
+    },
+    {
+      "name": "invoice-web",
+      "runtimeExecutable": ".venv\\Scripts\\python.exe",
+      "runtimeArgs": ["-m", "uvicorn", "server:app", "--host", "127.0.0.1", "--port", "8011"],
+      "port": 8011
+    }
+  ]
+}

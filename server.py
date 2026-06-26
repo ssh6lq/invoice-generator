@@ -14,6 +14,7 @@ Streamlit 대신 FastAPI로 다시 만든 버전. 사내망 다중 사용자용.
 import io
 import os
 import json
+import traceback
 from datetime import datetime
 
 try:
@@ -38,6 +39,7 @@ APP_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_EXPENSE_TPL = os.path.join(APP_DIR, "비용청구양식.xlsm")
 DEFAULT_OVERTIME_TPL = os.path.join(APP_DIR, "연장근무(수당)신청서_양식.xlsx")
 STATIC_DIR = os.path.join(APP_DIR, "static")
+DEFAULT_DOWNLOADS = os.path.join(os.path.expanduser("~"), "Downloads")
 
 XLSM_MIME = "application/vnd.ms-excel.sheet.macroEnabled.12"
 XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -83,9 +85,12 @@ def _build_receipt_llm(provider, model, api_key, base_url):
             }},
         )
         return llm.with_structured_output(Receipt, method="json_schema")
-    kwargs = {"model": model, "temperature": 0.0}
-    if api_key:
-        kwargs["api_key"] = api_key
+    # OpenAI 경로: 키가 반드시 필요. 없으면 명확히 안내(사내 모델을 쓰려는데 여기로 빠진 경우 방지).
+    if not api_key:
+        raise ValueError(
+            "OpenAI 모델에는 API Key가 필요합니다. 사내 모델을 쓰려면 사이드바에서 "
+            "‘사내 기본 모델’을 선택하거나, 서버 .env의 RECEIPT_PROVIDER='로컬 서버'를 확인하세요.")
+    kwargs = {"model": model, "temperature": 0.0, "api_key": api_key}
     llm = ChatOpenAI(**kwargs)
     return llm.with_structured_output(Receipt)
 
@@ -215,14 +220,19 @@ async def expense_analyze(
     payload = [(f.filename, await f.read()) for f in images]
     if not payload:
         raise HTTPException(400, "이미지가 없습니다.")
-    llm = _build_receipt_llm(
-        provider or ENV_PROVIDER, model or ENV_MODEL,
-        api_key or ENV_API_KEY, base_url or ENV_BASE_URL,
-    )
     try:
+        llm = _build_receipt_llm(
+            provider or ENV_PROVIDER, model or ENV_MODEL,
+            api_key or ENV_API_KEY, base_url or ENV_BASE_URL,
+        )
         results = _parse_receipts(payload, llm)
     except Exception as e:  # noqa: BLE001
-        raise HTTPException(500, f"분석 실패: {e}")
+        traceback.print_exc()   # 서버 터미널에 전체 원인 출력
+        raise HTTPException(500, f"분석 실패: {type(e).__name__}: {e}")
+    # 모든 이미지가 같은 이유로 실패하면(예: 모델·토큰·주소 오류) 명확히 알려준다.
+    errs = [r["error"] for r in results if r["error"]]
+    if results and len(errs) == len(results):
+        raise HTTPException(502, f"AI 모델 분석 실패: {errs[0]}")
     # 청구금액 기본값 = 영수금액
     rows = [{
         "date": r["date"], "store": r["store"], "purpose": "",
@@ -237,8 +247,13 @@ async def expense_analyze(
 async def expense_generate(
     payload: str = Form(...),
     template: UploadFile = File(None),
+    save: str = Form(None),
+    folder: str = Form(None),
 ):
-    """편집된 행으로 비용청구서(.xlsm)를 채워 다운로드로 반환한다.
+    """편집된 행으로 비용청구서(.xlsm)를 채운다.
+    save=1 이면 서버의 지정 폴더(folder, 기본 Downloads)에 직접 저장하고 경로를 반환한다
+    (브라우저 다운로드를 거치지 않아 매크로 차단 경고가 뜨지 않음).
+    save 가 없으면 브라우저 다운로드로 반환한다.
     payload(JSON): {rows:[...], basic:{dept,name,title}, welfare_budget:int}
     """
     data = json.loads(payload)
@@ -285,7 +300,7 @@ async def expense_generate(
 
     stamp = datetime.now().strftime("%Y%m%d_%H%M")
     fname = f"비용청구양식_작성완료_{stamp}.xlsm"
-    return _download(buf.getvalue(), fname, XLSM_MIME, count=n)
+    return _deliver(buf.getvalue(), fname, XLSM_MIME, n, save, folder)
 
 
 # ======================================================================
@@ -315,9 +330,11 @@ async def overtime_generate(
     attendance: UploadFile = File(...),
     payload: str = Form(...),
     template: UploadFile = File(None),
+    save: str = Form(None),
+    folder: str = Form(None),
 ):
-    """연장근무신청서(.xlsx)를 채워 다운로드로 반환한다.
-    payload(JSON): {extras:{day:{payoff,hours,note}}, dept_position:str}"""
+    """연장근무신청서(.xlsx)를 채운다. save=1 이면 서버 폴더에 직접 저장(경로 반환),
+    아니면 브라우저 다운로드. payload(JSON): {extras:{day:{payoff,hours,note}}, dept_position}"""
     data = json.loads(payload)
     extras_in = data.get("extras", {})
     dept_position = data.get("dept_position") or None
@@ -335,7 +352,7 @@ async def overtime_generate(
         raise HTTPException(500, f"생성 실패: {e}")
     stamp = datetime.now().strftime("%Y%m%d_%H%M")
     fname = f"연장근무신청서_작성완료_{stamp}.xlsx"
-    return _download(buf.getvalue(), fname, XLSX_MIME, count=n)
+    return _deliver(buf.getvalue(), fname, XLSX_MIME, n, save, folder)
 
 
 # ======================================================================
@@ -346,6 +363,66 @@ def _sec_to_hhmm(sec):
         return ""
     h, m = divmod(int(sec) // 60, 60)
     return f"{h:02d}:{m:02d}"
+
+
+def _deliver(data: bytes, fname: str, mime: str, n, save, folder):
+    """save 가 있으면 서버 폴더에 직접 저장(JSON 반환), 없으면 브라우저 다운로드."""
+    if save:
+        d = folder.strip() if folder and folder.strip() else DEFAULT_DOWNLOADS
+        try:
+            os.makedirs(d, exist_ok=True)
+            out_path = os.path.join(d, fname)
+            with open(out_path, "wb") as f:
+                f.write(data)
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(500, f"저장 실패: {e}")
+        return {"saved_path": out_path, "count": n}
+    return _download(data, fname, mime, count=n)
+
+
+def _pick_directory(initial=None):
+    """네이티브 폴더 선택 대화상자(탐색기)를 띄워 경로를 반환. 서버 PC에서만 동작."""
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+        root = tk.Tk()
+        root.withdraw()
+        root.wm_attributes("-topmost", True)
+        path = filedialog.askdirectory(initialdir=initial or DEFAULT_DOWNLOADS,
+                                       title="청구서를 저장할 폴더 선택")
+        root.update()
+        root.destroy()
+        return path or None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _open_in_explorer(path):
+    """탐색기를 열어 해당 파일을 선택해 보여준다(서버 PC, Windows)."""
+    try:
+        import subprocess
+        norm = os.path.normpath(path)
+        if os.path.exists(norm):
+            subprocess.Popen(["explorer", "/select,", norm])
+        else:
+            os.startfile(os.path.dirname(norm))  # noqa: S606
+    except Exception:  # noqa: BLE001
+        try:
+            os.startfile(os.path.dirname(os.path.normpath(path)))  # noqa: S606
+        except Exception:  # noqa: BLE001
+            pass
+
+
+@app.post("/api/pick-folder")
+def pick_folder(initial: str = Form(None)):
+    """탐색기 폴더 선택창을 띄워 고른 경로를 반환(서버 PC). 취소하면 path=None."""
+    return {"path": _pick_directory(initial), "default": DEFAULT_DOWNLOADS}
+
+
+@app.post("/api/open-folder")
+def open_folder(path: str = Form(...)):
+    _open_in_explorer(path)
+    return {"ok": True}
 
 
 def _download(data: bytes, filename: str, mime: str, count=None):

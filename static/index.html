@@ -4,7 +4,7 @@
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>청구서 자동 작성</title>
-  <link rel="stylesheet" href="/styles.css?v=5"/>
+  <link rel="stylesheet" href="/styles.css?v=8"/>
 </head>
 <body>
   <div class="wrap">
@@ -17,7 +17,7 @@
 
         <div class="sb-card">
           <div class="sb-h">📄 양식</div>
-          <div class="sb-status">✅ 기본 양식 사용 중<br/><b id="sbTplName">…</b></div>
+          <div class="sb-status">✓ 기본 양식 사용 중<br/><b id="sbTplName">…</b></div>
           <details class="sb-det">
             <summary>양식 변경</summary>
             <div class="body">
@@ -139,8 +139,20 @@
 
           <div class="card">
             <div class="step"><span class="num">5</span><span class="ttl">비용청구서 생성</span></div>
+            <p class="step-desc">생성하면 <b>지금 접속한 기기(내 PC)</b>로 다운로드돼요. 브라우저가 지원하면 저장 위치를 직접 고를 수 있습니다.</p>
             <button class="btn primary" id="genBtn" onclick="generateExpense()">📄 비용청구서 생성 &amp; 다운로드</button>
             <div id="genNote"></div>
+            <details class="sb-det" style="margin-top:10px;">
+              <summary>이 서버 PC 폴더에 직접 저장 (관리자용 · 매크로 경고 없음)</summary>
+              <div class="body">
+                <div class="savebar">
+                  <input type="text" id="saveFolder" readonly placeholder="기본: 서버 다운로드 폴더"/>
+                  <button class="btn ghost savebtn" onclick="pickFolder()">📂 폴더 선택</button>
+                </div>
+                <button class="btn ghost" onclick="generateExpense(true)">📁 서버 폴더에 저장</button>
+                <div class="muted" style="margin-top:6px;">서버(이 PC)에서 작업할 때만 쓰세요. 원격 접속자는 위 '다운로드'를 사용하세요.</div>
+              </div>
+            </details>
             <div id="newWrap" class="hidden" style="margin-top:10px;">
               <button class="btn ghost" onclick="resetAll()">↺ 새로 작성 (전체 초기화)</button>
             </div>
@@ -185,8 +197,19 @@
 
           <div class="card hidden" id="otGenCard">
             <div class="step"><span class="num">3</span><span class="ttl">연장근무신청서 생성</span></div>
+            <p class="step-desc">생성하면 <b>지금 접속한 기기(내 PC)</b>로 다운로드돼요.</p>
             <button class="btn primary" id="otGenBtn" onclick="generateOvertime()">📄 신청서 생성 &amp; 다운로드</button>
             <div id="otGenNote"></div>
+            <details class="sb-det" style="margin-top:10px;">
+              <summary>이 서버 PC 폴더에 직접 저장 (관리자용)</summary>
+              <div class="body">
+                <div class="savebar">
+                  <input type="text" id="otSaveFolder" readonly placeholder="기본: 서버 다운로드 폴더"/>
+                  <button class="btn ghost savebtn" onclick="pickFolder()">📂 폴더 선택</button>
+                </div>
+                <button class="btn ghost" onclick="generateOvertime(true)">📁 서버 폴더에 저장</button>
+              </div>
+            </details>
           </div>
         </section>
       </div>
@@ -196,6 +219,6 @@
   <div id="lightbox" class="lightbox hidden" onclick="closeLightbox()">
     <span class="lb-x">✕ 닫기</span><img id="lbImg" src="" alt=""/>
   </div>
-  <script src="/app.js?v=5"></script>
+  <script src="/app.js?v=8"></script>
 </body>
 </html>

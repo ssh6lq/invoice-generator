@@ -14,6 +14,8 @@ let overtimeTpl = null;
 // AI 연결: 기본은 '사내'(서버 .env). 사용자가 고급 설정에서 OpenAI/직접 로컬로 덮어쓸 수 있음.
 const OPENAI_MODELS = ["gpt-5.3", "gpt-5.3-mini", "gpt-4.1", "gpt-4.1-mini", "gpt-4o", "gpt-4o-mini"];
 let AI = { mode: "default", oaModel: "gpt-4o", cuBase: "", cuModel: "", key: "" };
+let saveFolder = "";          // 저장 폴더(서버 PC 경로). 비우면 서버 Downloads
+let lastSaved = { expense: "", overtime: "" };
 let lastBulk = { purpose: "", payment: "" };  // 일괄 채우기로 마지막에 적용한 값 (표시용)
 
 // ===== 공통 =====
@@ -98,6 +100,7 @@ function applyAiMode() {
   $("openaiFields").classList.toggle("hidden", AI.mode !== "openai");
   $("customFields").classList.toggle("hidden", AI.mode !== "custom");
   $("keyField").classList.toggle("hidden", AI.mode === "default");
+  const ar = $("aiReset"); if (ar) ar.classList.toggle("hidden", AI.mode === "default");
 }
 function saveAi() {
   AI = { mode: AI.mode, oaModel: $("oaModel").value, cuBase: $("cuBase").value.trim(), cuModel: $("cuModel").value.trim(), key: $("aiKey").value.trim() };
@@ -174,6 +177,15 @@ function closeLightbox() { $("lightbox").classList.add("hidden"); $("lbImg").src
 async function analyze() {
   const pending = pendingFiles();
   if (!pending.length) return;
+  // 연결 방식이 OpenAI/직접인데 필수값이 없으면 사내 모델로 잘못 빠지지 않게 막는다.
+  if (AI.mode === "openai" && !AI.key) {
+    note($("analyzeNote"), "warn", "OpenAI로 분석하려면 API Key가 필요해요. 사내 모델을 쓰려면 사이드바에서 ‘↩ 사내 기본 모델로 되돌리기’를 누르세요.");
+    return;
+  }
+  if (AI.mode === "custom" && !AI.cuBase) {
+    note($("analyzeNote"), "warn", "‘직접 입력’은 서버 주소(base_url)가 필요해요. 사내 모델을 쓰려면 ‘↩ 사내 기본 모델로 되돌리기’를 누르세요.");
+    return;
+  }
   const btn = $("analyzeBtn"); btn.disabled = true; btn.innerHTML = `<span class="spin"></span> 분석 중… (${pending.length}장)`;
   note($("analyzeNote"), "info", "");
   const fd = new FormData();
@@ -276,7 +288,7 @@ function bulkApply(key, val) {
 }
 
 // ===== 비용청구서 생성 =====
-async function generateExpense() {
+async function generateExpense(serverSave = false) {
   const dept = $("dept").value.trim(), name = $("name").value.trim();
   const missing = []; if (!dept) missing.push("소속부서명"); if (!name) missing.push("성명");
   if (missing.length) { note($("genNote"), "warn", `먼저 1단계 '기초정보 입력'에서 ${missing.join(" · ")}을(를) 입력해 주세요.`); return; }
@@ -286,13 +298,24 @@ async function generateExpense() {
   const fd = new FormData();
   fd.append("payload", JSON.stringify({ rows, basic: { dept, name, title }, welfare_budget: welfare }));
   if (expenseTpl) fd.append("template", expenseTpl);
+  if (serverSave) { fd.append("save", "1"); fd.append("folder", saveFolder); }
   const btn = $("genBtn"); btn.disabled = true; btn.innerHTML = `<span class="spin"></span> 생성 중…`;
   note($("genNote"), "info", "");
   try {
     const resp = await fetch("/api/expense/generate", { method: "POST", body: fd });
     if (!resp.ok) throw new Error(await errText(resp));
-    const { name: fn, count } = await download(resp, "비용청구서.xlsm");
-    note($("genNote"), "info", `<b>✅ 비용청구서가 완성됐어요</b><br/>비용 내역 ${count || ""}건 · ${fn} 가 다운로드됐어요.`);
+    if (serverSave) {
+      const d = await resp.json();
+      lastSaved.expense = d.saved_path;
+      note($("genNote"), "info",
+        `<b>✅ 서버 PC에 저장됐어요</b><br/>비용 내역 ${d.count || ""}건 · ${esc(d.saved_path)}` +
+        ` <button class="btn ghost openbtn" onclick="openSaved('expense')">📂 폴더 열기</button>`);
+    } else {
+      const r = await saveToClient(resp, "비용청구양식_작성완료.xlsm");
+      if (r.aborted) { note($("genNote"), "warn", "저장이 취소됐어요."); }
+      else note($("genNote"), "info",
+        `<b>✅ 비용청구서가 다운로드됐어요</b><br/>${esc(r.name)} 가 내 PC에 저장됐어요.`);
+    }
     $("newWrap").classList.remove("hidden");
   } catch (e) { note($("genNote"), "err", "생성 실패: " + e.message); }
   finally { btn.disabled = false; btn.innerHTML = "📄 비용청구서 생성 & 다운로드"; }
@@ -306,6 +329,47 @@ function resetAll() {
   $("dept").value = ""; $("name").value = ""; $("welfare").value = ""; $("previewToggle").checked = false;
   renderRcptFiles(); renderThumbs(); renderReview(); updateAnalyzeBtn();
   note($("analyzeNote"), "", ""); note($("genNote"), "", ""); $("newWrap").classList.add("hidden");
+}
+
+// ===== 클라이언트(접속한 내 PC) 다운로드 =====
+// 응답을 접속한 사용자의 PC에 저장. 브라우저가 지원하면(보안 컨텍스트) 저장 위치를
+// 직접 고르는 네이티브 창을 띄우고, 아니면 일반 다운로드(브라우저 다운로드 폴더)로 받는다.
+async function saveToClient(resp, fallbackName) {
+  const cd = resp.headers.get("Content-Disposition") || "";
+  const m = /filename\*=UTF-8''([^;]+)/.exec(cd);
+  const name = m ? decodeURIComponent(m[1]) : fallbackName;
+  const blob = await resp.blob();
+  if (window.isSecureContext && window.showSaveFilePicker) {
+    try {
+      const handle = await window.showSaveFilePicker({ suggestedName: name });
+      const w = await handle.createWritable();
+      await w.write(blob); await w.close();
+      return { name, picked: true };
+    } catch (e) { if (e && e.name === "AbortError") return { aborted: true }; }
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = name; document.body.appendChild(a); a.click();
+  a.remove(); URL.revokeObjectURL(url);
+  return { name, picked: false };
+}
+
+// ===== 저장 폴더 (서버 PC) =====
+async function pickFolder() {
+  try {
+    const fd = new FormData(); if (saveFolder) fd.append("initial", saveFolder);
+    const r = await fetch("/api/pick-folder", { method: "POST", body: fd });
+    const d = await r.json();
+    if (d.path) { saveFolder = d.path; updateSaveFolderDisplay(); }
+  } catch (e) { /* 취소/미지원 무시 */ }
+}
+function updateSaveFolderDisplay() {
+  if ($("saveFolder")) $("saveFolder").value = saveFolder;
+  if ($("otSaveFolder")) $("otSaveFolder").value = saveFolder;
+}
+async function openSaved(which) {
+  const p = lastSaved[which]; if (!p) return;
+  try { const fd = new FormData(); fd.append("path", p); await fetch("/api/open-folder", { method: "POST", body: fd }); } catch {}
 }
 
 // ===== 연장근무 =====
@@ -338,7 +402,7 @@ function renderAtt() {
 }
 function updOt(i, key, val) { otRows[i][key] = val; }
 function otBulk(v) { otRows.forEach((r) => { r.payoff = v; }); renderAtt(); }
-async function generateOvertime() {
+async function generateOvertime(serverSave = false) {
   if (!attFile) { note($("otGenNote"), "warn", "먼저 근태현황 파일을 올려주세요."); return; }
   const extras = {};
   otRows.forEach((r) => { extras[r.day] = { payoff: r.payoff, hours: r.hours, note: r.note }; });
@@ -347,13 +411,23 @@ async function generateOvertime() {
   fd.append("attendance", attFile);
   fd.append("payload", JSON.stringify({ extras, dept_position: parts.join(" / ") || null }));
   if (overtimeTpl) fd.append("template", overtimeTpl);
+  if (serverSave) { fd.append("save", "1"); fd.append("folder", saveFolder); }
   const btn = $("otGenBtn"); btn.disabled = true; btn.innerHTML = `<span class="spin"></span> 생성 중…`;
   note($("otGenNote"), "info", "");
   try {
     const resp = await fetch("/api/overtime/generate", { method: "POST", body: fd });
     if (!resp.ok) throw new Error(await errText(resp));
-    const { name: fn, count } = await download(resp, "연장근무신청서.xlsx");
-    note($("otGenNote"), "info", `<b>✅ 신청서가 완성됐어요</b><br/>${count || ""}건 반영 · ${fn} 가 다운로드됐어요.`);
+    if (serverSave) {
+      const d = await resp.json();
+      lastSaved.overtime = d.saved_path;
+      note($("otGenNote"), "info",
+        `<b>✅ 서버 PC에 저장됐어요</b><br/>${d.count || ""}건 반영 · ${esc(d.saved_path)}` +
+        ` <button class="btn ghost openbtn" onclick="openSaved('overtime')">📂 폴더 열기</button>`);
+    } else {
+      const r = await saveToClient(resp, "연장근무신청서_작성완료.xlsx");
+      if (r.aborted) note($("otGenNote"), "warn", "저장이 취소됐어요.");
+      else note($("otGenNote"), "info", `<b>✅ 신청서가 다운로드됐어요</b><br/>${esc(r.name)} 가 내 PC에 저장됐어요.`);
+    }
   } catch (e) { note($("otGenNote"), "err", "생성 실패: " + e.message); }
   finally { btn.disabled = false; btn.innerHTML = "📄 신청서 생성 & 다운로드"; }
 }
