@@ -4,7 +4,7 @@
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>청구서 자동 작성</title>
-  <link rel="stylesheet" href="/styles.css?v=8"/>
+  <link rel="stylesheet" href="/styles.css?v=14"/>
 </head>
 <body>
   <div class="wrap">
@@ -16,26 +16,25 @@
         <p class="sb-sub">영수증·근태현황을 올리면 양식을 자동으로 채워드려요</p>
 
         <div class="sb-card">
-          <div class="sb-h">📄 양식</div>
+          <div class="sb-h"><svg class="ic" viewBox="0 0 24 24" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/><path d="M14 2v5h5"/></svg>양식</div>
           <div class="sb-status">✓ 기본 양식 사용 중<br/><b id="sbTplName">…</b></div>
           <details class="sb-det">
-            <summary>양식 변경</summary>
+            <summary><svg class="ic" viewBox="0 0 24 24" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7h-9M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/></svg>양식 변경</summary>
             <div class="body">
               <input type="file" id="tplInput" accept=".xlsm,.xlsx"/>
-              <div class="muted">비우면 기본 제공 양식을 사용합니다.</div>
             </div>
           </details>
         </div>
 
         <div class="sb-card">
-          <div class="sb-h">⚙️ AI 분석</div>
+          <div class="sb-h"><svg class="ic" viewBox="0 0 24 24" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/><path d="M19 14l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/></svg>AI 분석</div>
           <div class="sb-status">
-            <span class="ok" id="aiStatus">✓ 사내 AI 모델 연결됨</span><br/>
-            <span class="muted" id="aiStatusSub">연결 설정은 관리자가 관리합니다.</span>
+            <span class="ok" id="aiStatus">✓ 사내 AI 모델 연결됨</span>
+            <div class="muted" id="aiStatusSub"></div>
             <div id="aiResetTop" class="hidden" style="margin-top:6px;"><a class="ai-reset" onclick="resetAiDefault()">↩ 사내 기본 모델로 되돌리기</a></div>
           </div>
           <details class="sb-det" style="margin-top:12px;">
-            <summary>모델 연결 옵션</summary>
+            <summary><svg class="ic" viewBox="0 0 24 24" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7h-9M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/></svg>모델 연결 설정</summary>
             <div class="body">
               <div>
                 <label class="fld">연결 방식</label>
@@ -43,7 +42,6 @@
                   <button data-v="openai" onclick="setAiMode(this)">OpenAI</button>
                   <button data-v="custom" onclick="setAiMode(this)">직접 입력</button>
                 </div>
-                <div class="muted" style="margin-top:6px;">선택하지 않으면 사내 기본 모델을 사용합니다.</div>
               </div>
               <div id="openaiFields" class="hidden">
                 <label class="fld">GPT 모델</label>
@@ -68,8 +66,8 @@
       <!-- ===== 메인 ===== -->
       <div class="main">
         <div class="tabs">
-          <button id="tab-expense" class="active" onclick="switchTab('expense')">🧾 비용청구</button>
-          <button id="tab-overtime" onclick="switchTab('overtime')">🌙 연장근무(야근) 청구</button>
+          <button id="tab-expense" class="active" onclick="switchTab('expense')"><svg class="ic" viewBox="0 0 24 24" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1z"/><path d="M16 8H8M16 12H8M13 16H8"/></svg>영수증 비용 청구서</button>
+          <button id="tab-overtime" onclick="switchTab('overtime')"><svg class="ic" viewBox="0 0 24 24" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6.36 6.36 0 0 0 9 9 9 9 0 1 1-9-9z"/></svg>야근·연장근무 수당 신청서</button>
         </div>
 
         <!-- ============ 비용청구 ============ -->
@@ -79,7 +77,7 @@
 
           <div class="card">
             <div class="step"><span class="num">1</span><span class="ttl">기초정보 입력</span></div>
-            <p class="step-desc">청구서에 들어갈 기본 정보예요. 성명을 넣으면 본인확인이 '서명완료'로 처리됩니다.</p>
+            <p class="step-desc">청구항목·소속부서·성명을 입력해 비용 청구서를 초기화합니다. 입력한 정보는 청구서 양식 상단에 그대로 반영됩니다.</p>
             <div style="margin-bottom:14px;">
               <label class="fld">청구항목명</label>
               <div class="seg" id="titleSeg">
@@ -87,19 +85,19 @@
                 <button data-v="복지비" onclick="setTitle(this)">복지비</button>
               </div>
             </div>
-            <div id="welfareWrap" class="hidden" style="margin-bottom:14px; max-width:240px;">
-              <label class="fld">복지비 한도(만원)</label>
-              <input type="number" id="welfare" min="0" step="10" placeholder="예: 50" oninput="renderReview()"/>
-            </div>
             <div class="row">
               <div><label class="fld">소속부서명</label><input type="text" id="dept"/></div>
               <div><label class="fld">성명</label><input type="text" id="name"/></div>
+            </div>
+            <div id="welfareWrap" class="hidden" style="margin-top:14px; max-width:240px;">
+              <label class="fld">복지비 한도(만원)</label>
+              <input type="number" id="welfare" min="0" step="10" placeholder="예: 50" oninput="renderReview()"/>
             </div>
           </div>
 
           <div class="card">
             <div class="step"><span class="num">2</span><span class="ttl">영수증 이미지 업로드</span></div>
-            <p class="step-desc">여러 장을 한 번에 올릴 수 있어요. 분석한 뒤 사진을 더 추가해도 됩니다.</p>
+            <p class="step-desc">청구할 영수증 사진을 업로드합니다. (여러 장 동시 첨부 가능, 추가 첨부 가능)</p>
             <div class="dropzone" id="rcptDrop">
               <div class="ico">☁︎</div>
               <div class="hl">영수증 사진을 끌어다 놓거나 선택하세요</div>
@@ -116,7 +114,7 @@
 
           <div class="card">
             <div class="step"><span class="num">3</span><span class="ttl">영수증 분석</span></div>
-            <p class="step-desc">새로 추가한 영수증만 분석해 기존 목록에 덧붙입니다. (이미 분석한 사진은 건너뜀)</p>
+            <p class="step-desc">영수증의 날짜·사용처·금액을 자동으로 추출합니다. (이미 분석한 사진은 건너뜀)</p>
             <div class="btn-row">
               <button class="btn primary" id="analyzeBtn" onclick="analyze()" disabled>영수증 분석 (0장)</button>
               <button class="btn ghost" id="resetListBtn" onclick="resetList()" style="flex:0 0 140px;" disabled>🗑️ 목록 초기화</button>
@@ -124,35 +122,24 @@
             <div id="analyzeNote"></div>
           </div>
 
-          <div class="card hidden" id="reviewCard">
+          <div class="card" id="reviewCard">
             <div class="step"><span class="num">4</span><span class="ttl">검토 / 수정</span></div>
-            <p class="step-desc" id="reviewDesc">인식 결과를 확인하고 필요하면 고치세요. 목적·결제방식을 선택하면 한도가 적용됩니다.</p>
+            <p class="step-desc" id="reviewDesc">분석으로 추출된 내역으로 양식을 작성합니다. '+ 행 추가'로 직접 입력할 수도 있습니다.</p>
             <div class="bulkbar" id="bulkbar">
               <span class="lbl">일괄 채우기</span>
               <select id="bulkPurpose" onchange="bulkApply('purpose', this.value)"><option value="">목적 선택</option></select>
               <span class="pays" id="bulkPays"></span>
             </div>
             <div class="tbl-wrap"><table class="grid" id="rcptTable"></table></div>
-            <div style="margin-top:12px;"><button class="btn ghost" style="width:auto;padding:8px 16px;" onclick="addRow()">+ 행 추가</button></div>
+            <div style="margin-top:12px; display:flex; justify-content:flex-end;"><button class="btn ghost" style="width:auto;padding:8px 16px;" onclick="addRow()">+ 행 추가</button></div>
             <div id="welfarePreview"></div>
           </div>
 
           <div class="card">
             <div class="step"><span class="num">5</span><span class="ttl">비용청구서 생성</span></div>
-            <p class="step-desc">생성하면 <b>지금 접속한 기기(내 PC)</b>로 다운로드돼요. 브라우저가 지원하면 저장 위치를 직접 고를 수 있습니다.</p>
-            <button class="btn primary" id="genBtn" onclick="generateExpense()">📄 비용청구서 생성 &amp; 다운로드</button>
+            <p class="step-desc">작성한 내용으로 비용 청구서를 생성합니다.</p>
+            <button class="btn primary" id="genBtn" onclick="generateExpense()">비용청구서 생성 &amp; 다운로드</button>
             <div id="genNote"></div>
-            <details class="sb-det" style="margin-top:10px;">
-              <summary>이 서버 PC 폴더에 직접 저장 (관리자용 · 매크로 경고 없음)</summary>
-              <div class="body">
-                <div class="savebar">
-                  <input type="text" id="saveFolder" readonly placeholder="기본: 서버 다운로드 폴더"/>
-                  <button class="btn ghost savebtn" onclick="pickFolder()">📂 폴더 선택</button>
-                </div>
-                <button class="btn ghost" onclick="generateExpense(true)">📁 서버 폴더에 저장</button>
-                <div class="muted" style="margin-top:6px;">서버(이 PC)에서 작업할 때만 쓰세요. 원격 접속자는 위 '다운로드'를 사용하세요.</div>
-              </div>
-            </details>
             <div id="newWrap" class="hidden" style="margin-top:10px;">
               <button class="btn ghost" onclick="resetAll()">↺ 새로 작성 (전체 초기화)</button>
             </div>
@@ -198,18 +185,8 @@
           <div class="card hidden" id="otGenCard">
             <div class="step"><span class="num">3</span><span class="ttl">연장근무신청서 생성</span></div>
             <p class="step-desc">생성하면 <b>지금 접속한 기기(내 PC)</b>로 다운로드돼요.</p>
-            <button class="btn primary" id="otGenBtn" onclick="generateOvertime()">📄 신청서 생성 &amp; 다운로드</button>
+            <button class="btn primary" id="otGenBtn" onclick="generateOvertime()">신청서 생성 &amp; 다운로드</button>
             <div id="otGenNote"></div>
-            <details class="sb-det" style="margin-top:10px;">
-              <summary>이 서버 PC 폴더에 직접 저장 (관리자용)</summary>
-              <div class="body">
-                <div class="savebar">
-                  <input type="text" id="otSaveFolder" readonly placeholder="기본: 서버 다운로드 폴더"/>
-                  <button class="btn ghost savebtn" onclick="pickFolder()">📂 폴더 선택</button>
-                </div>
-                <button class="btn ghost" onclick="generateOvertime(true)">📁 서버 폴더에 저장</button>
-              </div>
-            </details>
           </div>
         </section>
       </div>
@@ -219,6 +196,6 @@
   <div id="lightbox" class="lightbox hidden" onclick="closeLightbox()">
     <span class="lb-x">✕ 닫기</span><img id="lbImg" src="" alt=""/>
   </div>
-  <script src="/app.js?v=8"></script>
+  <script src="/app.js?v=14"></script>
 </body>
 </html>

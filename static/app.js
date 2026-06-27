@@ -14,8 +14,6 @@ let overtimeTpl = null;
 // AI 연결: 기본은 '사내'(서버 .env). 사용자가 고급 설정에서 OpenAI/직접 로컬로 덮어쓸 수 있음.
 const OPENAI_MODELS = ["gpt-5.3", "gpt-5.3-mini", "gpt-4.1", "gpt-4.1-mini", "gpt-4o", "gpt-4o-mini"];
 let AI = { mode: "default", oaModel: "gpt-4o", cuBase: "", cuModel: "", key: "" };
-let saveFolder = "";          // 저장 폴더(서버 PC 경로). 비우면 서버 Downloads
-let lastSaved = { expense: "", overtime: "" };
 let lastBulk = { purpose: "", payment: "" };  // 일괄 채우기로 마지막에 적용한 값 (표시용)
 
 // ===== 공통 =====
@@ -86,7 +84,7 @@ function updateAiStatus() {
     reset.classList.remove("hidden");
   } else {
     st.textContent = "✓ 사내 AI 모델 연결됨";
-    sub.textContent = "연결 설정은 관리자가 관리합니다.";
+    sub.textContent = "";
     reset.classList.add("hidden");
   }
 }
@@ -195,6 +193,7 @@ async function analyze() {
     const resp = await fetch("/api/expense/analyze", { method: "POST", body: fd });
     if (!resp.ok) throw new Error(await errText(resp));
     const data = await resp.json();
+    rcptRows = rcptRows.filter((r) => r.store || r.date);  // 비어 있는 시드/수동 행 제거 후 결과 추가
     data.rows.forEach((r) => rcptRows.push(r));
     pending.forEach((f) => analyzedNames.add(f.name));
     rcptRows.sort((a, b) => dateKey(a.date).localeCompare(dateKey(b.date)));
@@ -231,12 +230,11 @@ function welfareAlloc(rows, budgetWon) {
   return rows.map((_, i) => give[i]);
 }
 function renderReview() {
-  $("reviewCard").classList.toggle("hidden", rcptRows.length === 0);
-  if (!rcptRows.length) return;
+  if (!rcptRows.length) rcptRows.push(blankRow());  // 분석 전에도 빈 행 1개를 보여줘 직접 입력 가능
   const welfare = isWelfare();
   $("reviewDesc").textContent = welfare
     ? "복지비는 한도까지 영수일자 순으로 청구금액이 자동 배분돼요. 목적/거래처 등은 수정 가능."
-    : "인식 결과를 확인하고 필요하면 고치세요. 목적·결제방식을 선택하면 한도가 적용됩니다.";
+    : "분석으로 추출된 내역으로 양식을 작성합니다. '+ 행 추가'로 직접 입력할 수도 있습니다.";
   $("bulkPays").innerHTML = OPTIONS.payment.map((p) => `<button class="${lastBulk.payment === p ? "on" : ""}" onclick="bulkApply('payment','${esc(p)}')">${esc(p)}</button>`).join("");
   const alloc = welfare ? welfareAlloc(rcptRows, (toInt($("welfare").value) || 0) * 10000) : null;
   const head = `<tr><th>#</th><th>영수일자</th><th>거래처명</th><th>목적</th><th>영수금액</th><th>${welfare ? "청구금액(자동)" : "청구금액"}</th><th>결제방식</th><th>영수시간</th><th>지역</th><th>비고</th><th></th></tr>`;
@@ -288,7 +286,7 @@ function bulkApply(key, val) {
 }
 
 // ===== 비용청구서 생성 =====
-async function generateExpense(serverSave = false) {
+async function generateExpense() {
   const dept = $("dept").value.trim(), name = $("name").value.trim();
   const missing = []; if (!dept) missing.push("소속부서명"); if (!name) missing.push("성명");
   if (missing.length) { note($("genNote"), "warn", `먼저 1단계 '기초정보 입력'에서 ${missing.join(" · ")}을(를) 입력해 주세요.`); return; }
@@ -298,27 +296,18 @@ async function generateExpense(serverSave = false) {
   const fd = new FormData();
   fd.append("payload", JSON.stringify({ rows, basic: { dept, name, title }, welfare_budget: welfare }));
   if (expenseTpl) fd.append("template", expenseTpl);
-  if (serverSave) { fd.append("save", "1"); fd.append("folder", saveFolder); }
   const btn = $("genBtn"); btn.disabled = true; btn.innerHTML = `<span class="spin"></span> 생성 중…`;
   note($("genNote"), "info", "");
   try {
     const resp = await fetch("/api/expense/generate", { method: "POST", body: fd });
     if (!resp.ok) throw new Error(await errText(resp));
-    if (serverSave) {
-      const d = await resp.json();
-      lastSaved.expense = d.saved_path;
-      note($("genNote"), "info",
-        `<b>✅ 서버 PC에 저장됐어요</b><br/>비용 내역 ${d.count || ""}건 · ${esc(d.saved_path)}` +
-        ` <button class="btn ghost openbtn" onclick="openSaved('expense')">📂 폴더 열기</button>`);
-    } else {
-      const r = await saveToClient(resp, "비용청구양식_작성완료.xlsm");
-      if (r.aborted) { note($("genNote"), "warn", "저장이 취소됐어요."); }
-      else note($("genNote"), "info",
-        `<b>✅ 비용청구서가 다운로드됐어요</b><br/>${esc(r.name)} 가 내 PC에 저장됐어요.`);
-    }
+    const r = await saveToClient(resp, "비용청구양식_작성완료.xlsm");
+    if (r.aborted) { note($("genNote"), "warn", "저장이 취소됐어요."); }
+    else note($("genNote"), "info",
+      `<b>✅ 비용청구서가 다운로드됐어요</b><br/>${esc(r.name)} 가 내 PC에 저장됐어요.`);
     $("newWrap").classList.remove("hidden");
   } catch (e) { note($("genNote"), "err", "생성 실패: " + e.message); }
-  finally { btn.disabled = false; btn.innerHTML = "📄 비용청구서 생성 & 다운로드"; }
+  finally { btn.disabled = false; btn.innerHTML = "비용청구서 생성 & 다운로드"; }
 }
 
 // ===== 초기화 =====
@@ -354,24 +343,6 @@ async function saveToClient(resp, fallbackName) {
   return { name, picked: false };
 }
 
-// ===== 저장 폴더 (서버 PC) =====
-async function pickFolder() {
-  try {
-    const fd = new FormData(); if (saveFolder) fd.append("initial", saveFolder);
-    const r = await fetch("/api/pick-folder", { method: "POST", body: fd });
-    const d = await r.json();
-    if (d.path) { saveFolder = d.path; updateSaveFolderDisplay(); }
-  } catch (e) { /* 취소/미지원 무시 */ }
-}
-function updateSaveFolderDisplay() {
-  if ($("saveFolder")) $("saveFolder").value = saveFolder;
-  if ($("otSaveFolder")) $("otSaveFolder").value = saveFolder;
-}
-async function openSaved(which) {
-  const p = lastSaved[which]; if (!p) return;
-  try { const fd = new FormData(); fd.append("path", p); await fetch("/api/open-folder", { method: "POST", body: fd }); } catch {}
-}
-
 // ===== 연장근무 =====
 async function parseAttendance(files) {
   attFile = files[0]; if (!attFile) return;
@@ -402,7 +373,7 @@ function renderAtt() {
 }
 function updOt(i, key, val) { otRows[i][key] = val; }
 function otBulk(v) { otRows.forEach((r) => { r.payoff = v; }); renderAtt(); }
-async function generateOvertime(serverSave = false) {
+async function generateOvertime() {
   if (!attFile) { note($("otGenNote"), "warn", "먼저 근태현황 파일을 올려주세요."); return; }
   const extras = {};
   otRows.forEach((r) => { extras[r.day] = { payoff: r.payoff, hours: r.hours, note: r.note }; });
@@ -411,25 +382,16 @@ async function generateOvertime(serverSave = false) {
   fd.append("attendance", attFile);
   fd.append("payload", JSON.stringify({ extras, dept_position: parts.join(" / ") || null }));
   if (overtimeTpl) fd.append("template", overtimeTpl);
-  if (serverSave) { fd.append("save", "1"); fd.append("folder", saveFolder); }
   const btn = $("otGenBtn"); btn.disabled = true; btn.innerHTML = `<span class="spin"></span> 생성 중…`;
   note($("otGenNote"), "info", "");
   try {
     const resp = await fetch("/api/overtime/generate", { method: "POST", body: fd });
     if (!resp.ok) throw new Error(await errText(resp));
-    if (serverSave) {
-      const d = await resp.json();
-      lastSaved.overtime = d.saved_path;
-      note($("otGenNote"), "info",
-        `<b>✅ 서버 PC에 저장됐어요</b><br/>${d.count || ""}건 반영 · ${esc(d.saved_path)}` +
-        ` <button class="btn ghost openbtn" onclick="openSaved('overtime')">📂 폴더 열기</button>`);
-    } else {
-      const r = await saveToClient(resp, "연장근무신청서_작성완료.xlsx");
-      if (r.aborted) note($("otGenNote"), "warn", "저장이 취소됐어요.");
-      else note($("otGenNote"), "info", `<b>✅ 신청서가 다운로드됐어요</b><br/>${esc(r.name)} 가 내 PC에 저장됐어요.`);
-    }
+    const r = await saveToClient(resp, "연장근무신청서_작성완료.xlsx");
+    if (r.aborted) note($("otGenNote"), "warn", "저장이 취소됐어요.");
+    else note($("otGenNote"), "info", `<b>✅ 신청서가 다운로드됐어요</b><br/>${esc(r.name)} 가 내 PC에 저장됐어요.`);
   } catch (e) { note($("otGenNote"), "err", "생성 실패: " + e.message); }
-  finally { btn.disabled = false; btn.innerHTML = "📄 신청서 생성 & 다운로드"; }
+  finally { btn.disabled = false; btn.innerHTML = "신청서 생성 & 다운로드"; }
 }
 
 // ===== 옵션(드롭다운) =====
