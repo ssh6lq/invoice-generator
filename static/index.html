@@ -4,7 +4,7 @@
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>청구서 자동 작성</title>
-  <link rel="stylesheet" href="/styles.css?v=14"/>
+  <link rel="stylesheet" href="/styles.css?v=24"/>
 </head>
 <body>
   <div class="wrap">
@@ -12,21 +12,26 @@
 
       <!-- ===== 사이드바 ===== -->
       <aside class="sidebar">
-        <div class="sb-brand"><span class="dot"></span>청구서 자동 작성</div>
-        <p class="sb-sub">영수증·근태현황을 올리면 양식을 자동으로 채워드려요</p>
+        <div class="sb-brand"><span class="dot"></span>청구서 자동 생성</div>
+        <p class="sb-sub">영수증·근태현황으로 청구서를 생성합니다.</p>
 
         <div class="sb-card">
           <div class="sb-h"><svg class="ic" viewBox="0 0 24 24" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/><path d="M14 2v5h5"/></svg>양식</div>
           <div class="sb-status">✓ 기본 양식 사용 중<br/><b id="sbTplName">…</b></div>
-          <details class="sb-det">
-            <summary><svg class="ic" viewBox="0 0 24 24" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7h-9M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/></svg>양식 변경</summary>
-            <div class="body">
-              <input type="file" id="tplInput" accept=".xlsm,.xlsx"/>
-            </div>
-          </details>
         </div>
 
-        <div class="sb-card">
+        <div class="sb-card hidden" id="fileGuide">
+          <div class="sb-h"><svg class="ic" viewBox="0 0 24 24" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>근태현황 파일이란?</div>
+          <p class="ag-lead">사내 <b>그룹웨어</b>에서 매월 집계되는 개인 근태 기록입니다.</p>
+          <div class="ag-steps-title"><svg class="ic" viewBox="0 0 24 24" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>근태현황 파일 받는 방법</div>
+          <div class="ag-step"><span class="num">1.</span><div><b>다우오피스 접속 → 근태 메뉴</b></div></div>
+          <div class="ag-step"><span class="num">2.</span><div><b>'내 근태 현황'에서 '월간' 조회</b></div></div>
+          <div class="ag-step"><span class="num">3.</span><div><b>'목록 다운로드' 버튼 클릭</b></div></div>
+          <div class="ag-step"><span class="num">4.</span><div><b>홍길동_월간근태현황.xlsx 파일 생성</b></div></div>
+          <div class="ag-hint">메뉴 이름은 회사 그룹웨어마다 다를 수 있어요.</div>
+        </div>
+
+        <div class="sb-card" id="aiCard">
           <div class="sb-h"><svg class="ic" viewBox="0 0 24 24" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/><path d="M19 14l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/></svg>AI 분석</div>
           <div class="sb-status">
             <span class="ok" id="aiStatus">✓ 사내 AI 모델 연결됨</span>
@@ -66,18 +71,27 @@
       <!-- ===== 메인 ===== -->
       <div class="main">
         <div class="tabs">
-          <button id="tab-expense" class="active" onclick="switchTab('expense')"><svg class="ic" viewBox="0 0 24 24" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1z"/><path d="M16 8H8M16 12H8M13 16H8"/></svg>영수증 비용 청구서</button>
-          <button id="tab-overtime" onclick="switchTab('overtime')"><svg class="ic" viewBox="0 0 24 24" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6.36 6.36 0 0 0 9 9 9 9 0 1 1-9-9z"/></svg>야근·연장근무 수당 신청서</button>
+          <button id="tab-expense" class="active" onclick="switchTab('expense')"><svg class="ic" viewBox="0 0 24 24" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1z"/><path d="M16 8H8M16 12H8M13 16H8"/></svg>비용·복지비 청구서</button>
+          <button id="tab-overtime" onclick="switchTab('overtime')"><svg class="ic" viewBox="0 0 24 24" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6.36 6.36 0 0 0 9 9 9 9 0 1 1-9-9z"/></svg>연장근무 수당 신청서</button>
         </div>
 
         <!-- ============ 비용청구 ============ -->
         <section id="panel-expense">
-          <div class="hero"><h1>영수증 사진 한 장으로<br/>비용청구서를 완성하세요</h1></div>
+          <div class="hero"><h1>영수증 이미지로<br/>한 번에 비용 청구서를 완성하세요</h1></div>
+          <details class="howto" id="howtoExpense">
+            <summary><svg class="ic" viewBox="0 0 24 24" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.2 1 2h6c0-.8.4-1.5 1-2A7 7 0 0 0 12 2z"/></svg>처음이신가요? 사용 방법 보기</summary>
+            <div class="howto-body">
+              <div class="howto-step"><span class="num">1.</span><div><b>기초정보 입력</b> — 청구항목·소속부서·성명을 입력해요.</div></div>
+              <div class="howto-step"><span class="num">2.</span><div><b>영수증 사진 업로드</b> — 청구할 영수증을 한 번에 첨부할 수 있어요.</div></div>
+              <div class="howto-step"><span class="num">3.</span><div><b>이미지 분석</b> — 날짜·사용처·금액을 자동으로 추출해요.</div></div>
+              <div class="howto-step"><span class="num">4.</span><div><b>검토 후 생성</b> — 추출된 결제 내역으로 양식을 자동으로 채워 청구서를 생성해요.</div></div>
+            </div>
+          </details>
           <div style="height:18px;"></div>
 
           <div class="card">
             <div class="step"><span class="num">1</span><span class="ttl">기초정보 입력</span></div>
-            <p class="step-desc">청구항목·소속부서·성명을 입력해 비용 청구서를 초기화합니다. 입력한 정보는 청구서 양식 상단에 그대로 반영됩니다.</p>
+            <p class="step-desc">청구항목·소속부서·성명을 입력하세요. 입력된 정보는 청구서에 반영됩니다.</p>
             <div style="margin-bottom:14px;">
               <label class="fld">청구항목명</label>
               <div class="seg" id="titleSeg">
@@ -91,15 +105,15 @@
             </div>
             <div id="welfareWrap" class="hidden" style="margin-top:14px; max-width:240px;">
               <label class="fld">복지비 한도(만원)</label>
-              <input type="number" id="welfare" min="0" step="10" placeholder="예: 50" oninput="renderReview()"/>
+              <input type="number" id="welfare" min="0" step="10" placeholder="예: 50" oninput="welfareBudgetChanged()"/>
             </div>
           </div>
 
           <div class="card">
             <div class="step"><span class="num">2</span><span class="ttl">영수증 이미지 업로드</span></div>
-            <p class="step-desc">청구할 영수증 사진을 업로드합니다. (여러 장 동시 첨부 가능, 추가 첨부 가능)</p>
+            <p class="step-desc">청구할 영수증 사진을 업로드합니다. (여러 파일 첨부 가능)</p>
             <div class="dropzone" id="rcptDrop">
-              <div class="ico">☁︎</div>
+              <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4"/><path d="m8 8 4-4 4 4"/><path d="M5 14v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3"/></svg></div>
               <div class="hl">영수증 사진을 끌어다 놓거나 선택하세요</div>
               <div class="sub">JPG · PNG · WEBP · BMP</div>
               <div class="pick">파일 선택</div>
@@ -114,7 +128,7 @@
 
           <div class="card">
             <div class="step"><span class="num">3</span><span class="ttl">영수증 분석</span></div>
-            <p class="step-desc">영수증의 날짜·사용처·금액을 자동으로 추출합니다. (이미 분석한 사진은 건너뜀)</p>
+            <p class="step-desc">영수증의 날짜·사용처·금액을 자동으로 추출합니다.</p>
             <div class="btn-row">
               <button class="btn primary" id="analyzeBtn" onclick="analyze()" disabled>영수증 분석 (0장)</button>
               <button class="btn ghost" id="resetListBtn" onclick="resetList()" style="flex:0 0 140px;" disabled>🗑️ 목록 초기화</button>
@@ -131,13 +145,24 @@
               <span class="pays" id="bulkPays"></span>
             </div>
             <div class="tbl-wrap"><table class="grid" id="rcptTable"></table></div>
-            <div style="margin-top:12px; display:flex; justify-content:flex-end;"><button class="btn ghost" style="width:auto;padding:8px 16px;" onclick="addRow()">+ 행 추가</button></div>
+            <div style="margin-top:12px; display:flex; justify-content:flex-end;"><button class="addrow" onclick="addRow()"><span class="pl">+</span> 행 추가</button></div>
             <div id="welfarePreview"></div>
           </div>
 
           <div class="card">
             <div class="step"><span class="num">5</span><span class="ttl">비용청구서 생성</span></div>
             <p class="step-desc">작성한 내용으로 비용 청구서를 생성합니다.</p>
+            <details class="howto macro-guide" id="macroGuide" style="margin:0 0 16px;">
+              <summary><svg class="ic" viewBox="0 0 24 24" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>다운로드한 청구서에서 매크로가 차단되나요? — 최초 1회 설정</summary>
+              <div class="howto-body">
+                <p class="howto-lead">이 서버에서 받은 비용청구서(.xlsm)는 Windows가 외부 파일로 보고 매크로를 막을 수 있어요. 아래를 <b>PC마다 한 번만</b> 설정하면 이후엔 매크로가 바로 동작합니다.</p>
+                <div class="howto-step"><span class="num">1.</span><div>윈도우 검색 → <b>인터넷 옵션</b> 실행</div></div>
+                <div class="howto-step"><span class="num">2.</span><div><b>[보안]</b> 탭 → <b>[로컬 인트라넷]</b> 선택 → <b>[사이트] → [고급]</b></div></div>
+                <div class="howto-step"><span class="num">3.</span><div>"영역에 웹 사이트 추가"에 이 주소를 넣고 <b>추가</b>:<br/><code class="addr" id="serverAddr">…</code><button type="button" class="copybtn" onclick="copyServerAddr(this)">복사</button></div></div>
+                <div class="howto-step"><span class="num">4.</span><div>닫기 → 확인. 이후 받은 파일을 열 때 <b>[콘텐츠 사용]</b>만 누르면 됩니다.</div></div>
+                <p class="howto-hint">※ '신뢰할 수 있는 사이트'로 등록할 땐 'https 필요' 체크를 해제하세요. 서버 IP가 고정일 때 권장합니다.</p>
+              </div>
+            </details>
             <button class="btn primary" id="genBtn" onclick="generateExpense()">비용청구서 생성 &amp; 다운로드</button>
             <div id="genNote"></div>
             <div id="newWrap" class="hidden" style="margin-top:10px;">
@@ -149,14 +174,24 @@
         <!-- ============ 연장근무 ============ -->
         <section id="panel-overtime" class="hidden">
           <div class="hero"><h1>근태현황 파일로<br/>연장근무신청서를 자동 작성하세요</h1></div>
+          <details class="howto" id="howtoOvertime">
+            <summary><svg class="ic" viewBox="0 0 24 24" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.2 1 2h6c0-.8.4-1.5 1-2A7 7 0 0 0 12 2z"/></svg>처음이신가요? 사용 방법 보기</summary>
+            <div class="howto-body">
+              <p class="howto-lead">그룹웨어의 <b>월간 근태현황</b> 파일을 첨부하면, 승인된 초과근무 날을 자동으로 찾아 드려요.</p>
+              <div class="howto-step"><span class="num">1.</span><div><b>대상일 자동 탐지</b> — 승인받은 초과근무 날을 탐지해요.</div></div>
+              <div class="howto-step"><span class="num">2.</span><div><b>대체휴무 반영</b> — 대체휴무로 쓴 시간은 신청 대상에서 제외해요.</div></div>
+              <div class="howto-step"><span class="num">3.</span><div><b>연장근무 신청서 생성</b> — 확정된 시간으로 신청서를 생성해요.</div></div>
+              <p class="howto-hint">날짜·근무시간 열이 있는 표준 근태현황 양식이면 인식됩니다.</p>
+            </div>
+          </details>
           <div style="height:18px;"></div>
 
           <div class="card">
             <div class="step"><span class="num">1</span><span class="ttl">근태현황 업로드</span></div>
-            <p class="step-desc">월간 근태현황(.xlsx)을 올리면 연장근무 대상일을 자동으로 찾아 보여줍니다.</p>
+            <p class="step-desc">월간 근태현황(.xlsx)을 올리면 연장근무 대상일을 자동으로 탐지합니다.</p>
             <div class="dropzone" id="attDrop">
-              <div class="ico">☁︎</div>
-              <div class="hl">근태현황 파일을 끌어다 놓거나 선택하세요</div>
+              <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4"/><path d="m8 8 4-4 4 4"/><path d="M5 14v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3"/></svg></div>
+              <div class="hl">월간 근태현황 파일을 끌어다 놓거나 선택하세요</div>
               <div class="sub">XLSX</div>
               <div class="pick">파일 선택</div>
             </div>
@@ -165,8 +200,8 @@
           </div>
 
           <div class="card hidden" id="otReviewCard">
-            <div class="step"><span class="num">2</span><span class="ttl">대체휴무 입력</span></div>
-            <p class="step-desc">기본은 X(대체휴무 미지급) → 근무시간 전체가 신청됩니다. 받은 날만 O로 바꾸고 대체휴무시간(예: 1:30 또는 1.5)을 넣으면 그만큼 차감됩니다.</p>
+            <div class="step"><span class="num">2</span><span class="ttl">연장근무 내역 검토</span><button type="button" class="resetlink" onclick="resetOvertime()">↺ 다른 파일로 다시</button></div>
+            <p class="step-desc">근태현황 파일에서 자동으로 추출한 연장근무 대상일이에요. <br><b>대체휴무를 사용한 날</b>은 대체휴무를 <b>O</b>로 변경 후, 시간(예: 1.5)을 입력하세요. 입력한 만큼 신청 시간에서 자동 차감됩니다.</p>
             <div class="metrics" id="otMetrics"></div>
             <div class="bulkbar">
               <span class="lbl">대체휴무지급 일괄</span>
@@ -176,15 +211,15 @@
               </span>
             </div>
             <div class="row" style="margin-bottom:14px;">
-              <div><label class="fld">소속(선택)</label><input type="text" id="otDept"/></div>
-              <div><label class="fld">직위(선택)</label><input type="text" id="otPos"/></div>
+              <div><label class="fld">소속</label><input type="text" id="otDept"/></div>
+              <div><label class="fld">직위</label><input type="text" id="otPos"/></div>
             </div>
             <div class="tbl-wrap"><table class="grid" id="attTable"></table></div>
           </div>
 
           <div class="card hidden" id="otGenCard">
             <div class="step"><span class="num">3</span><span class="ttl">연장근무신청서 생성</span></div>
-            <p class="step-desc">생성하면 <b>지금 접속한 기기(내 PC)</b>로 다운로드돼요.</p>
+            <p class="step-desc">승인된 초과 근로 시간으로 비용 청구서를 생성합니다.</p>
             <button class="btn primary" id="otGenBtn" onclick="generateOvertime()">신청서 생성 &amp; 다운로드</button>
             <div id="otGenNote"></div>
           </div>
@@ -196,6 +231,6 @@
   <div id="lightbox" class="lightbox hidden" onclick="closeLightbox()">
     <span class="lb-x">✕ 닫기</span><img id="lbImg" src="" alt=""/>
   </div>
-  <script src="/app.js?v=14"></script>
+  <script src="/app.js?v=23"></script>
 </body>
 </html>

@@ -70,26 +70,38 @@ async def no_cache_static(request, call_next):
 # ======================================================================
 # 공통 로직 (Streamlit 앱에서 그대로 가져온 순수 함수들)
 # ======================================================================
+def _supports_custom_temperature(model: str) -> bool:
+    """gpt-5 계열·o1/o3/o4 추론형 모델은 temperature 기본값(1)만 허용한다.
+    이런 모델엔 temperature를 아예 보내면 안 되므로(400 에러) False를 돌려준다."""
+    m = (model or "").lower().removeprefix("openai:")
+    return not m.startswith(("gpt-5", "o1", "o3", "o4"))
+
+
 def _build_receipt_llm(provider, model, api_key, base_url):
     """영수증 파싱용 LLM 생성. provider='로컬 서버'면 OpenAI 호환 엔드포인트에 붙는다."""
     from langchain_openai import ChatOpenAI
     if provider == "로컬 서버":
         if model.startswith("openai:"):
             model = model[len("openai:"):]
-        llm = ChatOpenAI(
+        local_kwargs = dict(
             model=model, base_url=base_url, api_key=(api_key or "EMPTY"),
-            temperature=0.1, max_retries=5,
+            max_retries=5,
             model_kwargs={"extra_body": {
                 "chat_template_kwargs": {"enable_thinking": False},
             }},
         )
+        if _supports_custom_temperature(model):
+            local_kwargs["temperature"] = 0.1
+        llm = ChatOpenAI(**local_kwargs)
         return llm.with_structured_output(Receipt, method="json_schema")
     # OpenAI 경로: 키가 반드시 필요. 없으면 명확히 안내(사내 모델을 쓰려는데 여기로 빠진 경우 방지).
     if not api_key:
         raise ValueError(
             "OpenAI 모델에는 API Key가 필요합니다. 사내 모델을 쓰려면 사이드바에서 "
             "‘사내 기본 모델’을 선택하거나, 서버 .env의 RECEIPT_PROVIDER='로컬 서버'를 확인하세요.")
-    kwargs = {"model": model, "temperature": 0.0, "api_key": api_key}
+    kwargs = {"model": model, "api_key": api_key}
+    if _supports_custom_temperature(model):
+        kwargs["temperature"] = 0.0
     llm = ChatOpenAI(**kwargs)
     return llm.with_structured_output(Receipt)
 
@@ -293,7 +305,8 @@ async def expense_generate(
         raise HTTPException(500, f"생성 실패: {e}")
 
     stamp = datetime.now().strftime("%Y%m%d_%H%M")
-    fname = f"비용청구양식_작성완료_{stamp}.xlsm"
+    who = (basic.get("name") or "").strip() or "작성완료"
+    fname = f"비용청구양식_{who}_{stamp}.xlsm"
     return _download(buf.getvalue(), fname, XLSM_MIME, count=n)
 
 
@@ -343,7 +356,8 @@ async def overtime_generate(
     except Exception as e:  # noqa: BLE001
         raise HTTPException(500, f"생성 실패: {e}")
     stamp = datetime.now().strftime("%Y%m%d_%H%M")
-    fname = f"연장근무신청서_작성완료_{stamp}.xlsx"
+    who = (parse_attendance(att)[0] or "").strip() or "작성완료"
+    fname = f"연장근무신청서_{who}_{stamp}.xlsx"
     return _download(buf.getvalue(), fname, XLSX_MIME, count=n)
 
 

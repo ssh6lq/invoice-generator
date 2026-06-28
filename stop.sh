@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# 청구서 앱 종료 (포트 8501)
+# 청구서 앱 종료 (포트 8000)
 # 사용법:  ./stop.sh
-PORT=8501
+PORT=8000
 
 PIDS=$(lsof -ti:"$PORT" 2>/dev/null)
 if [ -z "$PIDS" ]; then

@@ -29,6 +29,13 @@ DEFAULT_EXPENSE_TPL = os.path.join(APP_DIR, "비용청구양식.xlsm")
 DEFAULT_OVERTIME_TPL = os.path.join(APP_DIR, "연장근무(수당)신청서_양식.xlsx")
 
 
+def _supports_custom_temperature(model: str) -> bool:
+    """gpt-5 계열·o1/o3/o4 추론형 모델은 temperature 기본값(1)만 허용한다.
+    이런 모델엔 temperature를 아예 보내면 안 되므로(400 에러) False를 돌려준다."""
+    m = (model or "").lower().removeprefix("openai:")
+    return not m.startswith(("gpt-5", "o1", "o3", "o4"))
+
+
 def _build_receipt_llm(provider, model, api_key, base_url):
     """영수증 파싱용 LLM 생성. provider='로컬 서버'면 OpenAI 호환 엔드포인트(base_url)에
     붙고 API 키가 없어도 된다. 어느 쪽이든 비전(이미지 입력) 모델이어야 한다."""
@@ -37,20 +44,24 @@ def _build_receipt_llm(provider, model, api_key, base_url):
         # init_chat_model 식 접두어('openai:')를 붙여 넣어도 자동 제거 (실제 API엔 모델명만)
         if model.startswith("openai:"):
             model = model[len("openai:"):]
-        llm = ChatOpenAI(
+        local_kwargs = dict(
             model=model,
             base_url=base_url,
             api_key=(api_key or "EMPTY"),   # 키가 필요 없는 서버용 더미값
-            temperature=0.1,
             max_retries=5,
             model_kwargs={"extra_body": {
                 # Qwen3 계열: 추론(thinking) 토큰을 끄지 않으면 JSON 출력이 깨질 수 있음
                 "chat_template_kwargs": {"enable_thinking": False},
             }},
         )
+        if _supports_custom_temperature(model):
+            local_kwargs["temperature"] = 0.1
+        llm = ChatOpenAI(**local_kwargs)
         # vLLM은 tool-calling 파서가 꺼져 있을 수 있어 guided JSON(json_schema)이 더 안전
         return llm.with_structured_output(Receipt, method="json_schema")
-    kwargs = {"model": model, "temperature": 0.0}
+    kwargs = {"model": model}
+    if _supports_custom_temperature(model):
+        kwargs["temperature"] = 0.0
     if api_key:
         kwargs["api_key"] = api_key
     llm = ChatOpenAI(**kwargs)

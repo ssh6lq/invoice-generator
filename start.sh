@@ -3,7 +3,7 @@
 # 사용법:  ./start.sh
 cd "$(dirname "$0")"
 
-PORT=8501
+PORT=8000
 
 # 이미 떠 있으면 중복 실행 방지
 if lsof -ti:"$PORT" >/dev/null 2>&1; then
@@ -16,13 +16,12 @@ IFACE=$(route get default 2>/dev/null | awk '/interface:/{print $2}')
 IP=$(ipconfig getifaddr "$IFACE" 2>/dev/null)
 [ -z "$IP" ] && IP=$(ipconfig getifaddr en0 2>/dev/null)
 
-echo "▶ 앱을 실행합니다."
+echo "▶ 앱을 실행합니다. (FastAPI)"
 echo "   같은 와이파이/사무실 네트워크에서 접속 주소:"
 echo "     http://${IP:-<내IP>}:$PORT"
 echo "   종료하려면: 이 창에서 Ctrl+C  또는  다른 창에서 ./stop.sh"
 echo
 
-exec .venv/bin/streamlit run app.py \
-  --server.address 0.0.0.0 \
-  --server.port "$PORT" \
-  --browser.gatherUsageStats false
+exec .venv/bin/uvicorn server:app \
+  --host 0.0.0.0 \
+  --port "$PORT"

@@ -75,9 +75,18 @@ def _image_to_data_url(image_bytes: bytes, filename: str = "receipt.jpg") -> str
     return f"data:{mime};base64,{b64}"
 
 
+def _supports_custom_temperature(model: str) -> bool:
+    """gpt-5 계열·o1/o3/o4 추론형 모델은 temperature 기본값(1)만 허용한다.
+    이런 모델엔 temperature를 아예 보내면 안 되므로(400 에러) False를 돌려준다."""
+    m = (model or "").lower().removeprefix("openai:")
+    return not m.startswith(("gpt-5", "o1", "o3", "o4"))
+
+
 def make_llm(model: str = "gpt-4o", api_key: Optional[str] = None, temperature: float = 0.0):
     """구조화 출력이 바인딩된 LLM 생성."""
-    kwargs = {"model": model, "temperature": temperature}
+    kwargs = {"model": model}
+    if _supports_custom_temperature(model):
+        kwargs["temperature"] = temperature
     if api_key:
         kwargs["api_key"] = api_key
     llm = ChatOpenAI(**kwargs)
