@@ -23,7 +23,9 @@ class Receipt(BaseModel):
         None, description="영수일자. 반드시 YYYY-MM-DD 형식. 없으면 null"
     )
     store: Optional[str] = Field(
-        None, description="상호명(가맹점/거래처명). 없으면 null"
+        None,
+        description="상호명(거래처명). '가맹점 정보'/'판매자 정보' 구분이 없는 일반 영수증의 "
+                    "상호. 없으면 null",
     )
     amount: Optional[int] = Field(
         None, description="총 결제(영수) 금액. 숫자만(원 단위 정수). 없으면 null"
@@ -36,6 +38,45 @@ class Receipt(BaseModel):
         description="가맹점 주소의 자치구(구 단위). 예: '송파구', '구로구'. "
                     "구 단위가 없으면 시/군 단위(예: '성남시'). 주소가 없으면 null",
     )
+    biz_no: Optional[str] = Field(
+        None,
+        description="사업자등록번호(XXX-XX-XXXXX, 하이픈 포함 10자리). "
+                    "'가맹점 정보'/'판매자 정보' 구분이 없는 일반 영수증의 번호. 없으면 null",
+    )
+    # 배달앱 등 '가맹점 정보'와 '판매자 정보'가 나뉜 영수증 — 각 섹션 값을 '그대로' 읽는다.
+    # (어느 값을 쓸지 결정은 코드가 함: resolve_store_biz)
+    merchant_name: Optional[str] = Field(
+        None, description="'가맹점 정보' 섹션의 상호. 그 섹션이 없으면 null",
+    )
+    merchant_biz_no: Optional[str] = Field(
+        None, description="'가맹점 정보' 섹션의 사업자등록번호(XXX-XX-XXXXX). 없으면 null",
+    )
+    seller_name: Optional[str] = Field(
+        None, description="'판매자 정보' 섹션의 상호. 그 섹션이 없으면 null",
+    )
+    seller_biz_no: Optional[str] = Field(
+        None, description="'판매자 정보' 섹션의 사업자등록번호(XXX-XX-XXXXX). 없으면 null",
+    )
+
+
+def resolve_store_biz(r):
+    """영수증 파싱 결과에서 최종 거래처명·사업자등록번호(+짝이 되는 상호)를 결정한다.
+    - 거래처명(store): '가맹점 정보' 상호 우선(2섹션) → 일반 상호(store) → '판매자 정보' 상호.
+    - 사업자번호(biz_no): '판매자 정보' 번호 우선(2섹션) → 일반 번호(biz_no) → '가맹점 정보' 번호.
+    - biz_name: 그 사업자번호와 같은 섹션의 상호(비고에 '상호/번호'로 함께 넣기 위함).
+    (모델은 각 섹션 값을 그대로 읽기만 하고, 규칙 적용은 여기서 확정 → 작은 모델도 안정적.)
+    반환: (store, biz_no, biz_name)
+    """
+    store = r.merchant_name or r.store or r.seller_name
+    if r.seller_biz_no:
+        biz_no, biz_name = r.seller_biz_no, r.seller_name
+    elif r.biz_no:
+        biz_no, biz_name = r.biz_no, r.store
+    elif r.merchant_biz_no:
+        biz_no, biz_name = r.merchant_biz_no, r.merchant_name
+    else:
+        biz_no, biz_name = None, None
+    return store, biz_no, biz_name
 
 
 SYSTEM_PROMPT = (
@@ -57,12 +98,28 @@ SYSTEM_PROMPT = (
     "\n"
     "[형식 규칙]\n"
     "- 날짜는 YYYY-MM-DD 형식으로 변환 (연도가 두 자리면 20xx로 해석).\n"
-    "- 상호명은 사업자명/가맹점명을 우선하고, 지점명이 있으면 함께 포함.\n"
     "- 금액은 '합계', '총액', '받을금액', '승인금액' 등 최종 결제금액을 사용하고 "
     "쉼표·원 표기를 제거한 정수로.\n"
     "- 시각은 HH:MM(24시간)으로.\n"
     "- 지역은 가맹점 주소에서 자치구(구 단위, 예: '송파구', '구로구')만 뽑되, "
     "구가 없으면 시/군 단위로. 주소가 없으면 null.\n"
+    "\n"
+    "[상호·사업자등록번호 — 두 섹션을 각각 '그대로' 읽기]\n"
+    "- 배달앱 등 영수증에 '가맹점 정보'와 '판매자 정보' 섹션이 따로 있으면, 각 섹션의 "
+    "값을 있는 그대로 채우세요(어느 것을 최종 사용할지는 시스템이 정하므로 그대로만 읽으면 됨):\n"
+    "    · merchant_name = '가맹점 정보' 섹션의 상호\n"
+    "    · merchant_biz_no = '가맹점 정보' 섹션의 사업자등록번호\n"
+    "    · seller_name = '판매자 정보' 섹션의 상호\n"
+    "    · seller_biz_no = '판매자 정보' 섹션의 사업자등록번호\n"
+    "  그리고 이 경우 store·biz_no 는 null 로 둡니다.\n"
+    "  예) 가맹점 정보: 상호 '(주)우아한형제들', 사업자등록번호 120-87-65763 / "
+    "판매자 정보: 상호 '명인카츠', 사업자등록번호 581-08-02838 → "
+    "merchant_name='(주)우아한형제들', merchant_biz_no='120-87-65763', "
+    "seller_name='명인카츠', seller_biz_no='581-08-02838'.\n"
+    "- 섹션 구분이 없는 '일반 영수증'이면, 그 상호를 store 에, 사업자등록번호를 biz_no 에 "
+    "채우고 merchant_*/seller_* 는 모두 null.\n"
+    "- 사업자등록번호는 'XXX-XX-XXXXX'(하이픈 포함 10자리 숫자) 형식. 주문번호·승인번호·"
+    "전화번호 등 다른 번호와 혼동하지 마세요.\n"
     "- 정보가 없으면(또는 판독 불가하면) 해당 항목은 null. 추측해서 채우지 마세요."
 )
 
@@ -123,11 +180,13 @@ def parse_many(images: List[tuple], model: str = "gpt-4o",
     results = []
     for idx, (fname, content) in enumerate(images):
         rec = {"filename": fname, "date": None, "store": None,
-               "amount": None, "time": None, "region": None, "error": None}
+               "amount": None, "time": None, "region": None, "biz_no": None,
+               "biz_name": None, "error": None}
         try:
             r = parse_receipt(content, fname, llm=llm)
-            rec.update(date=r.date, store=r.store, amount=r.amount,
-                       time=r.time, region=r.region)
+            store, biz_no, biz_name = resolve_store_biz(r)
+            rec.update(date=r.date, store=store, amount=r.amount,
+                       time=r.time, region=r.region, biz_no=biz_no, biz_name=biz_name)
         except Exception as e:  # noqa: BLE001
             rec["error"] = str(e)
         results.append(rec)

@@ -14,9 +14,13 @@ Streamlit 대신 FastAPI로 다시 만든 버전. 사내망 다중 사용자용.
 import io
 import os
 import json
+import logging
 import secrets
 import traceback
 from datetime import datetime
+
+# 앱 로그는 uvicorn 로거로 남긴다 → log_config.json 의 타임스탬프 포맷이 그대로 적용됨.
+logger = logging.getLogger("uvicorn.error")
 
 try:
     from dotenv import load_dotenv
@@ -31,7 +35,7 @@ from fastapi.staticfiles import StaticFiles
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from receipt_parser import Receipt, SYSTEM_PROMPT, _image_to_data_url
+from receipt_parser import Receipt, SYSTEM_PROMPT, _image_to_data_url, resolve_store_biz
 from excel_filler import (
     fill_workbook, get_dropdown_options, get_support_limits, _to_date,
     validate_claims, sort_for_claim, build_claim_xlsx, get_note_examples,
@@ -136,7 +140,8 @@ def _parse_receipts(payload, llm):
     results = []
     for fname, content in payload:
         rec = {"filename": fname, "date": None, "store": None,
-               "amount": None, "time": None, "region": None, "error": None}
+               "amount": None, "time": None, "region": None, "biz_no": None,
+               "biz_name": None, "error": None}
         try:
             data_url = _image_to_data_url(content, fname)
             messages = [
@@ -149,10 +154,20 @@ def _parse_receipts(payload, llm):
                 ]),
             ]
             r = llm.invoke(messages)
-            rec.update(date=r.date, store=r.store, amount=r.amount,
-                       time=r.time, region=r.region)
+            store, biz_no, biz_name = resolve_store_biz(r)
+            rec.update(date=r.date, store=store, amount=r.amount,
+                       time=r.time, region=r.region, biz_no=biz_no, biz_name=biz_name)
+            # 추출 결과 로그 — 확정값(거래처/사업자번호) + 모델이 읽은 원본 섹션값까지 남긴다.
+            logger.info(
+                "[영수증분석] %s → 거래처=%r 일자=%s 금액=%s 시각=%s 지역=%r | 비고용=%r/%r "
+                "(가맹점 %r/%r · 판매자 %r/%r · 단일 %r/%r)",
+                fname, store, r.date, r.amount, r.time, r.region, biz_name, biz_no,
+                r.merchant_name, r.merchant_biz_no, r.seller_name, r.seller_biz_no,
+                r.store, r.biz_no,
+            )
         except Exception as e:  # noqa: BLE001
             rec["error"] = str(e)
+            logger.warning("[영수증분석] %s → 실패: %s", fname, e)
         results.append(rec)
     return results
 
@@ -279,6 +294,8 @@ async def expense_analyze(
         "date": r["date"], "store": r["store"], "purpose": "",
         "amount": r["amount"], "claim": r["amount"], "payment": "",
         "time": r["time"], "region": r["region"], "note": "",
+        # 개인형법인카드 결제 시 비고 자동입력용 (판매자 상호 + 사업자등록번호)
+        "biz_no": r.get("biz_no"), "biz_name": r.get("biz_name"),
         "filename": r["filename"], "error": r["error"],
     } for r in results]
     return {"rows": rows}

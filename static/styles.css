@@ -166,7 +166,12 @@ select:-webkit-autofill, textarea:-webkit-autofill{
   font-size:11.5px; color:var(--muted); line-height:1.5;}
 
 /* 파일 목록 */
-.files{margin:12px 0 0; display:flex; flex-direction:column; gap:4px;}
+.files-head{display:flex; align-items:center; margin:14px 0 0;}
+.files-head .cnt{font-size:12.5px; color:var(--muted);}
+.files-head .clr{margin-left:auto; cursor:pointer; border:1px solid var(--line2); background:#fff;
+  border-radius:999px; padding:4px 12px; font-size:12.5px; font-weight:600; color:#5e6b7b;}
+.files-head .clr:hover{border-color:var(--danger); color:var(--danger); background:#fdf3f2;}
+.files{margin:8px 0 0; display:flex; flex-direction:column; gap:4px;}
 .file{display:flex; align-items:center; gap:8px; font-size:13px; color:#666;}
 .file .n{color:#aaa; min-width:18px; font-size:11px;}
 .file .nm{flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
@@ -200,7 +205,7 @@ table.grid td input, table.grid td select{height:32px; font-size:13px;}
 table.grid td.num input{text-align:right;}
 
 /* 비용청구 검토 표: 값이 잘리지 않도록 컬럼 최소 너비 지정 (필요 시 가로 스크롤) */
-#rcptTable{min-width:1020px; table-layout:fixed;}
+#rcptTable{min-width:1254px; table-layout:fixed;}
 #rcptTable th{text-align:center;}
 /* 입력칸을 세로 가운데 정렬 + 위아래 여백을 동일하게 줘 행 간격을 균일하게. */
 #rcptTable td{vertical-align:middle; padding-top:6px; padding-bottom:6px;}
@@ -208,9 +213,19 @@ table.grid td.num input{text-align:right;}
 /* select는 오른쪽 네이티브 내림표시와 글자가 겹치지 않도록 오른쪽 여백을 넉넉히 준다. */
 #rcptTable td select{padding-right:22px;}
 #rcptTable th, #rcptTable td{padding-left:6px; padding-right:6px;}
-#rcptTable th:nth-child(1),  #rcptTable td:nth-child(1) {width:30px; text-align:center; color:#9aa3af;} /* # */
+/* 맨 왼쪽 열(순번+재분석+삭제) 고정 — 가로 스크롤해도 항상 보이게. (.rowfix 로만 한정: insert 행 제외) */
+#rcptTable .rowfix{
+  width:46px; position:sticky; left:0; z-index:2; white-space:nowrap;
+  padding-left:4px; padding-right:2px;
+  background:#fff; box-shadow:inset -1px 0 0 var(--line);
+}
+#rcptTable th.rowfix{background:#f7f9fb; z-index:3; text-align:center;}
+#rcptTable td.rowfix{text-align:left;}
+#rcptTable td.rowfix .reslot{display:inline-block; width:20px; text-align:center; vertical-align:middle;}
+#rcptTable td.rowfix .rnum{color:#9aa3af; font-size:12px; vertical-align:middle;}
+#rcptTable td.rowfix .reana{padding:2px 2px;}
 #rcptTable th:nth-child(2),  #rcptTable td:nth-child(2) {width:94px;}   /* 영수일자 */
-#rcptTable th:nth-child(3),  #rcptTable td:nth-child(3) {width:118px;}  /* 거래처명 */
+#rcptTable th:nth-child(3),  #rcptTable td:nth-child(3) {width:200px;}  /* 거래처명 */
 #rcptTable th:nth-child(4),  #rcptTable td:nth-child(4) {width:112px;}  /* 목적 */
 #rcptTable th:nth-child(5),  #rcptTable td:nth-child(5) {width:92px;}   /* 영수금액 (백만원 기준 통일) */
 #rcptTable th:nth-child(6),  #rcptTable td:nth-child(6) {width:92px;}   /* 청구금액 (백만원 기준 통일) */
@@ -218,8 +233,8 @@ table.grid td.num input{text-align:right;}
 #rcptTable th:nth-child(8),  #rcptTable td:nth-child(8) {width:76px;}   /* 영수시간 */
 #rcptTable th:nth-child(9),  #rcptTable td:nth-child(9) {width:70px;}   /* 지역 */
 #rcptTable th:nth-child(10), #rcptTable td:nth-child(10){width:120px;}  /* 참여자 */
-#rcptTable th:nth-child(11), #rcptTable td:nth-child(11){width:94px;}   /* 비고 */
-#rcptTable th:nth-child(12), #rcptTable td:nth-child(12){width:40px;}   /* 행 삭제 */
+#rcptTable th:nth-child(11), #rcptTable td:nth-child(11){width:240px;}  /* 비고 */
+#rcptTable th:nth-child(12), #rcptTable td:nth-child(12){width:44px;}   /* 행 삭제 */
 /* 매크로 검토 오류 셀 강조 (매크로 노란 음영 ColorIndex 36 대응) */
 #rcptTable .cell-error{background:#fff3c4 !important; outline:1.5px solid #f0c000; border-radius:4px;}
 /* 비용청구서 미리보기 */
@@ -238,8 +253,12 @@ table.grid td.num input{text-align:right;}
 .gen-hint{font-size:12px; line-height:1.7; margin:10px 0 0; color:var(--muted);}
 /* 행 삭제(✕) 버튼 */
 #rcptTable td.rowact{white-space:nowrap; text-align:center;}
-.rowact .x{cursor:pointer; border:none; background:none; font-size:14px; line-height:1; padding:2px 3px; color:#aab1ba;}
-.rowact .x:hover{color:var(--danger);}
+.rowact .x, .rowfix .x{cursor:pointer; border:none; background:none; font-size:14px; line-height:1; padding:2px 3px; color:#aab1ba;}
+.rowact .x:hover, .rowfix .x:hover{color:var(--danger);}
+/* 행별 재분석(↻) 버튼 */
+.rowact .reana, .rowfix .reana{cursor:pointer; border:none; background:none; font-size:15px; line-height:1; padding:2px 4px; color:#8aa0bd;}
+.rowact .reana:hover, .rowfix .reana:hover{color:var(--blue);}
+.rowact .reana:disabled, .rowfix .reana:disabled{cursor:default; color:#c2ccd9;}
 
 /* 행 사이 '여기에 추가' 어포던스 — 평소엔 빈 줄, hover 시 연한 파란 선 + 왼쪽 끝 '+' 노출. 줄 전체 클릭 가능 */
 #rcptTable tr.insrow{cursor:pointer;}
@@ -281,6 +300,7 @@ table.grid td.num input{text-align:right;}
 .hidden{display:none !important;}
 .muted{color:var(--muted); font-size:13px;}
 .spin{display:inline-block; width:16px; height:16px; border:2px solid rgba(255,255,255,.5); border-top-color:#fff; border-radius:50%; animation:sp .7s linear infinite;}
+.spin.dark{width:13px; height:13px; border-color:rgba(49,130,246,.3); border-top-color:var(--blue); vertical-align:middle;}
 @keyframes sp{to{transform:rotate(360deg)}}
 /* 미리보기 썸네일 + 라이트박스 */
 .preview-toggle{display:flex; align-items:center; gap:8px; margin-top:12px; font-size:13px; color:#444; cursor:pointer; user-select:none;}

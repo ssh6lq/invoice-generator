@@ -196,7 +196,17 @@ function addRcptFiles(files) {
 function renderRcptFiles() {
   $("rcptFiles").innerHTML = rcptFiles.map((f, i) =>
     `<div class="file"><span class="n">${i + 1}</span><span class="nm">${esc(f.name)}</span><button class="x" onclick="removeRcpt(${i})">✕</button></div>`).join("");
+  $("rcptFilesHead").classList.toggle("hidden", rcptFiles.length === 0);
+  $("rcptFilesCnt").textContent = `첨부 ${rcptFiles.length}장`;
   $("previewToggleWrap").classList.toggle("hidden", rcptFiles.length === 0);
+}
+// 첨부한 영수증 사진을 한 번에 모두 제거한다. (미리보기 URL도 함께 정리)
+function clearRcptFiles() {
+  if (!rcptFiles.length) return;
+  if (!confirm(`첨부한 영수증 ${rcptFiles.length}장을 모두 삭제할까요?`)) return;
+  rcptFiles.forEach((f) => { if (urlCache[f.name]) { URL.revokeObjectURL(urlCache[f.name]); delete urlCache[f.name]; } });
+  rcptFiles = [];
+  renderRcptFiles(); renderThumbs(); updateAnalyzeBtn();
 }
 function removeRcpt(i) {
   const f = rcptFiles[i];
@@ -276,6 +286,35 @@ async function retryFailed() {
   await analyze();                                 // 미분석 사진(=방금 실패분)만 재분석
 }
 
+// 특정 행 하나만 원본 이미지로 다시 분석한다. (목적/결제방식 등 사용자 선택은 유지)
+async function reanalyzeRow(i) {
+  const r = rcptRows[i];
+  const file = rcptFiles.find((f) => f.name === r.filename);
+  if (!file) { note($("analyzeNote"), "warn", "이 행의 원본 이미지를 찾을 수 없어요. (2단계 목록에서 지워졌을 수 있어요)"); return; }
+  const btn = document.querySelector(`#rcptTable [data-reana="${i}"]`);
+  if (btn) { btn.disabled = true; btn.innerHTML = `<span class="spin dark"></span>`; }
+  const fd = new FormData(); fd.append("images", file); aiOverride(fd);
+  try {
+    const resp = await fetch("/api/expense/analyze", { method: "POST", body: fd });
+    if (!resp.ok) throw new Error(await errText(resp));
+    const nr = (await resp.json()).rows[0];
+    if (!nr) throw new Error("분석 결과가 비어 있어요.");
+    if (nr.error) throw new Error(nr.error);
+    // AI 추출값만 갱신 — 목적·결제방식 등 사용자가 고른 값은 유지
+    r.date = fmtDateInput(nr.date); r.store = nr.store; r.amount = nr.amount;
+    r.time = fmtTimeInput(nr.time); r.region = nr.region;
+    r.biz_no = nr.biz_no; r.biz_name = nr.biz_name; r.error = null;
+    if (isWelfare()) recomputeWelfare(); else autoClaimExpense(i);  // 청구금액 자동값 갱신
+    autofillParticipant(r); autofillBizNote(r);                     // 참여자·비고 자동채움 갱신
+    markReviewDirty();
+    renderReview();
+    note($("analyzeNote"), "info", `${i + 1}번 행을 다시 분석했어요.`);
+  } catch (e) {
+    note($("analyzeNote"), "err", `재분석 실패: ${e.message}`);
+    renderReview();
+  }
+}
+
 // ===== 검토 표 =====
 function optTags(list, val) { return ['<option value=""></option>'].concat(list.map((o) => `<option ${o === val ? "selected" : ""}>${esc(o)}</option>`)).join(""); }
 function welfareAlloc(rows, budgetWon) {
@@ -316,14 +355,17 @@ function renderReview() {
     ? "복지비는 한도까지 영수일자 순으로 청구금액이 자동 배분돼요. 목적/거래처 등은 수정 가능."
     : "추출된 내역으로 양식을 작성합니다. 목적 선택에 따라 청구금액이 목적별 한도로 자동 조정돼요.";
   $("bulkPays").innerHTML = OPTIONS.payment.map((p) => `<button class="${lastBulk.payment === p ? "on" : ""}" onclick="bulkApply('payment','${esc(p)}')">${esc(p)}</button>`).join("");
-  const head = `<tr><th>#</th><th>영수일자</th><th>거래처명</th><th>목적</th><th>영수금액</th><th>청구금액(자동)</th><th>결제방식</th><th>영수시간</th><th>지역</th><th>참여자</th><th>비고</th><th></th></tr>`;
+  // 맨 왼쪽 열(순번+재분석)은 고정(sticky)이라 가로 스크롤해도 항상 보인다. 삭제(✕)는 맨 오른쪽.
+  const head = `<tr><th class="rowfix">#</th><th>영수일자</th><th>거래처명</th><th>목적</th><th>영수금액</th><th>청구금액(자동)</th><th>결제방식</th><th>영수시간</th><th>지역</th><th>참여자</th><th>비고</th><th></th></tr>`;
   let capped = 0;  // 비용 모드에서 목적 한도로 깎인 건수(안내용)
   const rowsHtml = rcptRows.map((r, i) => {
     // 청구금액은 모드와 무관하게 동일한 입력박스로 통일 — 자동값(r.claim)이 채워지지만 직접 수정도 가능.
     const lim = OPTIONS.limits[r.purpose], amt = toInt(r.amount);
     if (!welfare && lim != null && amt != null && amt > lim) capped++;
     const claimCell = `<input type="text" inputmode="numeric" data-cell="${i}:claim" value="${fmt(r.claim)}" oninput="updAmount(${i},this,'claim')"/>`;
-    return `<tr class="drow"><td>${i + 1}</td>
+    const reanaBtn = (r.filename && rcptFiles.some((f) => f.name === r.filename))
+      ? `<button class="reana" data-reana="${i}" title="이 영수증 다시 분석" onclick="reanalyzeRow(${i})">↻</button>` : "";
+    return `<tr class="drow"><td class="rowfix"><span class="reslot">${reanaBtn}</span><span class="rnum">${i + 1}</span></td>
       <td><input type="text" data-cell="${i}:date" value="${esc(r.date)}" title="${esc(r.date)}" placeholder="YYYY.MM.DD" oninput="updDate(${i},this)"/></td>
       <td><input type="text" data-cell="${i}:store" value="${esc(r.store)}" title="${esc(r.store)}" oninput="upd(${i},'store',this.value)"/></td>
       <td><select data-cell="${i}:purpose" title="${esc(r.purpose)}" onchange="upd(${i},'purpose',this.value)">${optTags(OPTIONS.purpose, r.purpose)}</select></td>
@@ -365,6 +407,20 @@ function markReviewDirty() {
 function isMealPurpose(p) { return (OPTIONS.meal || []).includes(String(p || "").trim()); }
 // 목적별 비고작성예시 — 비고칸 placeholder(얕은 글씨)로 안내.
 function noteExample(p) { return (OPTIONS.note_examples || {})[String(p || "").trim()] || ""; }
+// 개인형 법인카드 결제인지.
+function isBizCard(p) { return String(p || "").includes("개인형법인카드"); }
+// 개인형 법인카드면 영수증에서 추출한 사업자등록번호를 비고에 자동 입력한다.
+// - 비고가 비어 있을 때만 채우고, 결제방식을 다른 것으로 바꾸면 (자동 채운) 사업자번호만 비운다.
+//   (사용자가 직접 입력한 비고는 건드리지 않음.)
+function autofillBizNote(r) {
+  const cur = String(r.note || "").trim();
+  const biz = String(r.biz_no || "").trim();
+  const nm = String(r.biz_name || "").trim();
+  const composed = biz ? (nm ? `${nm}/${biz}` : biz) : "";   // 예: '명인카츠/581-08-02838'
+  if (isBizCard(r.payment) && composed && !cur) { r.note = composed; return true; }
+  if (!isBizCard(r.payment) && composed && cur === composed) { r.note = ""; return true; }
+  return false;
+}
 // 참여자칸 안내문: 식대류(참여자 필수)면 입력 예시, 목적이 정해졌는데 식대가 아니면 '참여자 불필요'.
 function participantPlaceholder(p) {
   const s = String(p || "").trim();
@@ -383,6 +439,7 @@ function upd(i, key, val) {
   markReviewDirty();
   rcptRows[i][key] = val;
   if (key === "purpose") autofillParticipant(rcptRows[i]);  // 식대로 바꾸면 성명 자동 채움
+  if (key === "payment") autofillBizNote(rcptRows[i]);       // 개인형법인카드면 사업자번호를 비고에 자동 채움
   if (isWelfare()) {
     // 복지비: 금액·날짜가 바뀌면 영수일자 순 자동 배분을 다시 계산한다.
     if (key === "amount" || key === "date") recomputeWelfare();
@@ -390,7 +447,7 @@ function upd(i, key, val) {
     // 비용: 목적·영수금액이 바뀌면 그 목적의 한도로 청구금액을 다시 계산한다.
     if (key === "purpose" || key === "amount") autoClaimExpense(i);
   }
-  if (["purpose", "claim", "amount", "date"].includes(key)) renderReview();
+  if (["purpose", "claim", "amount", "date", "payment"].includes(key)) renderReview();
 }
 // 영수일자: 숫자만 쳐도 YYYY.MM.DD로 자동 정리. 복지비는 일자순 배분이라 재계산이 필요.
 // 영수금액·청구금액: 숫자만 쳐도 1,000,000 처럼 천단위 콤마를 실시간으로 넣는다.
@@ -427,7 +484,7 @@ function updTime(i, el) {
   const f = fmtTimeInput(el.value);
   el.value = f; rcptRows[i].time = f;
 }
-function blankRow() { return { date: "", store: "", purpose: "", amount: "", claim: "", payment: "", time: "", region: "", note: "", participants: "", filename: "", error: null }; }
+function blankRow() { return { date: "", store: "", purpose: "", amount: "", claim: "", payment: "", time: "", region: "", note: "", participants: "", biz_no: "", biz_name: "", filename: "", error: null }; }
 function insertRow(i) { markReviewDirty(); rcptRows.splice(i + 1, 0, blankRow()); renderReview(); updateAnalyzeBtn(); }
 function delRow(i) { markReviewDirty(); rcptRows.splice(i, 1); renderReview(); updateAnalyzeBtn(); }
 function addRow() { markReviewDirty(); rcptRows.push(blankRow()); renderReview(); }
@@ -437,6 +494,7 @@ function bulkApply(key, val) {
   lastBulk[key] = val;                              // 무엇을 적용했는지 기억 (버튼/드롭다운 표시용)
   rcptRows.forEach((r) => { r[key] = val; });
   if (key === "purpose") rcptRows.forEach(autofillParticipant);  // 식대 일괄 적용 시 성명 자동 채움
+  if (key === "payment") rcptRows.forEach(autofillBizNote);      // 개인형법인카드 일괄 적용 시 사업자번호를 비고에 자동 채움
   if (key === "purpose" && !isWelfare()) rcptRows.forEach((_, i) => autoClaimExpense(i));  // 목적 일괄 적용 시 청구금액도 한도로 재계산
   renderReview();
   // 드롭다운을 '목적 선택'으로 되돌려, 같은 목적을 다시 골라도 onchange가 발생해 재적용되게 한다.

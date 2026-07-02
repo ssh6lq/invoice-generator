@@ -20,4 +20,6 @@ COPY . .
 EXPOSE 8000
 
 # 4) 실행 (컨테이너 안에서는 venv 없이 시스템 파이썬으로 실행)
-CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000"]
+#    --log-config: 로그에 날짜/시간(타임스탬프)을 찍기 위한 설정
+CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000", \
+     "--log-config", "log_config.json"]

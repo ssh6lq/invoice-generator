@@ -129,6 +129,10 @@
               <div class="pick">파일 선택</div>
             </div>
             <input type="file" id="rcptInput" class="hidden" multiple accept=".jpg,.jpeg,.png,.webp,.bmp"/>
+            <div class="files-head hidden" id="rcptFilesHead">
+              <span class="cnt" id="rcptFilesCnt"></span>
+              <button type="button" class="clr" onclick="clearRcptFiles()">🗑 일괄 삭제</button>
+            </div>
             <div class="files" id="rcptFiles"></div>
             <label class="preview-toggle hidden" id="previewToggleWrap">
               <input type="checkbox" id="previewToggle" onchange="renderThumbs()"/> 사진 미리보기
@@ -149,6 +153,7 @@
           <div class="card" id="reviewCard">
             <div class="step"><span class="num">4</span><span class="ttl">검토 / 수정</span></div>
             <p class="step-desc" id="reviewDesc">분석으로 추출된 내역으로 양식을 작성합니다. '+ 행 추가'로 직접 입력할 수도 있습니다.</p>
+            <div class="note warn" style="margin:0 0 14px;">⚠️ <b>AI가 자동으로 추출한 정보로 오인식 될 수 있습니다. 실제 영수증과 대조하여 최종 비용청구서를 생성해 주세요.</b></div>
             <div class="bulkbar" id="bulkbar">
               <span class="lbl">일괄 채우기</span>
               <select id="bulkPurpose" onchange="bulkApply('purpose', this.value)"><option value="">목적 선택</option></select>
