@@ -1,6 +1,6 @@
 """
 overtime_filler.py
-월간 근태현황(.xlsx)을 읽어 '연장근무(수당)신청서' 양식을 채운다.
+월간 근태현황(.xlsx)을 읽어 '초과근무(수당)신청서' 양식을 채운다.
 
 규칙 (사용자 지정)
   - 포함 대상: '승인 초과 근로시간' > 0 인 날만.
@@ -200,7 +200,7 @@ def parse_attendance(src_path_or_bytes):
 def fill_overtime(template_path_or_bytes, attendance_path_or_bytes,
                   name=None, month=None, extras=None, dept_position=None):
     """
-    근태현황을 읽어 연장근무신청서 양식을 채워 (BytesIO, count) 반환.
+    근태현황을 읽어 초과근무신청서 양식을 채워 (BytesIO, count) 반환.
     name/month 를 직접 주면 근태 파일 값보다 우선한다.
     dept_position 을 주면 '부서명 / 직위' 칸(D7)에 채운다.
 
@@ -317,7 +317,7 @@ def fill_overtime(template_path_or_bytes, attendance_path_or_bytes,
 if __name__ == "__main__":
     import sys
     att = sys.argv[1] if len(sys.argv) > 1 else "남소희_월간근태현황_202605.xlsx"
-    tpl = sys.argv[2] if len(sys.argv) > 2 else "연장근무(수당)신청서_양식.xlsx"
+    tpl = sys.argv[2] if len(sys.argv) > 2 else "초과근무(수당)신청서_양식.xlsx"
     name, year, month, recs = parse_attendance(att)
     print(f"이름={name} 연={year} 월={month} 대상일수={len(recs)}")
     for rc in recs:

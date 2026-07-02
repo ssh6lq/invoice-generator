@@ -3,7 +3,7 @@ app.py — 청구서 자동 작성 (Streamlit)
 
 두 가지 모드를 선택해서 사용한다.
   1) 🧾 비용청구  : 영수증 이미지를 GPT 비전으로 분석해 비용청구 양식(.xlsm) 작성
-  2) 🌙 연장근무(야근) 청구 : 월간 근태현황(.xlsx)을 읽어 연장근무(수당)신청서 양식 작성
+  2) 🌙 초과근무(야근) 청구 : 월간 근태현황(.xlsx)을 읽어 초과근무(수당)신청서 양식 작성
 
 실행:  streamlit run app.py
 """
@@ -26,7 +26,7 @@ st.set_page_config(page_title="청구서 자동 작성", page_icon="🧾", layou
 # 번들 기본 양식 (사용자가 따로 업로드하지 않으면 이 파일을 사용)
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_EXPENSE_TPL = os.path.join(APP_DIR, "비용청구양식.xlsm")
-DEFAULT_OVERTIME_TPL = os.path.join(APP_DIR, "연장근무(수당)신청서_양식.xlsx")
+DEFAULT_OVERTIME_TPL = os.path.join(APP_DIR, "초과근무(수당)신청서_양식.xlsx")
 
 
 def _supports_custom_temperature(model: str) -> bool:
@@ -118,8 +118,8 @@ THEMES = {
         "desc": "영수증 사진을 올리면 날짜·상호명·금액을 인식해 비용청구 양식을 자동으로 채웁니다.",
     },
     "overtime": {
-        "tag": "연장근무청구",
-        "headline": "근태현황 파일로\n연장근무신청서를 완성하세요",
+        "tag": "초과근무청구",
+        "headline": "근태현황 파일로\n초과근무신청서를 완성하세요",
         "desc": "월간 근태현황을 올리면 '승인 초과 근로시간'이 있는 날을 찾아 신청서를 자동으로 채웁니다.",
     },
 }
@@ -703,7 +703,7 @@ with st.sidebar:
 
 # 작업 선택: 헤드라인 바로 아래(본문 흐름)에서 탭으로 렌더한다(page_header). 상단 헤더에
 # 가리지 않으면서 첫 사용자가 바로 인지할 수 있다. 모드 값은 세션에서 읽어 테마를 먼저 정한다.
-MODE_OPTIONS = ["🧾 비용청구", "🌙 연장근무(야근) 청구"]
+MODE_OPTIONS = ["🧾 비용청구", "🌙 초과근무(야근) 청구"]
 st.session_state.setdefault("mode_select", MODE_OPTIONS[0])
 mode = st.session_state.get("mode_select") or MODE_OPTIONS[0]
 
@@ -1233,7 +1233,7 @@ def render_expense():
 
 
 # =========================================================================
-# 2) 연장근무(야근) 청구 모드
+# 2) 초과근무(야근) 청구 모드
 # =========================================================================
 def render_overtime():
     page_header(theme)
@@ -1242,9 +1242,9 @@ def render_overtime():
         st.markdown("##### 📄 양식")
         with st.expander("양식 변경 (다른 파일 사용)", expanded=False):
             tpl_file = st.file_uploader(
-                "연장근무(수당)신청서 양식(.xlsx)", type=["xlsx"],
+                "초과근무(수당)신청서 양식(.xlsx)", type=["xlsx"],
                 label_visibility="collapsed",
-                help="비워두면 기본 제공 양식(연장근무(수당)신청서_양식.xlsx)을 자동으로 사용합니다.",
+                help="비워두면 기본 제공 양식(초과근무(수당)신청서_양식.xlsx)을 자동으로 사용합니다.",
             )
         tpl_bytes, tpl_name, tpl_is_default = _template_bytes_name(
             tpl_file, DEFAULT_OVERTIME_TPL)
@@ -1262,7 +1262,7 @@ def render_overtime():
         "XLSX · 파일당 최대 200MB")
     with st.container(border=True, key="att_box"):
         step(1, "근태현황 업로드 및 미리보기",
-             "월간 근태현황(.xlsx)을 올리면 연장근무 대상일을 자동으로 찾아 보여줍니다.")
+             "월간 근태현황(.xlsx)을 올리면 초과근무 대상일을 자동으로 찾아 보여줍니다.")
         att_file = st.file_uploader(
             "월간 근태현황(.xlsx)", type=["xlsx"],
             help="이름·조회기간·일자별 출퇴근/승인초과가 담긴 근태현황 파일.",
@@ -1281,7 +1281,7 @@ def render_overtime():
         c1, c2, c3 = st.columns(3)
         c1.metric("👤 성명", name or "-")
         c2.metric("🗓️ 조회기간", f"{year or '-'}-{month:02d}" if month else "-")
-        c3.metric("🌙 연장근무 대상일", f"{len(records)}일")
+        c3.metric("🌙 초과근무 대상일", f"{len(records)}일")
 
         st.caption("아래 부서명·직위는 신청서 상단의 '부서명 / 직위' 칸(D7)에 채워집니다. "
                    "성명은 근태현황에서 자동으로 가져옵니다.")
@@ -1345,14 +1345,14 @@ def render_overtime():
 
     # ---- 3. 생성 ---------------------------------------------------------
     with st.container(border=True):
-        step(3, "연장근무신청서 생성")
+        step(3, "초과근무신청서 생성")
         if tpl_bytes is None:
-            st.info("사이드바에서 연장근무(수당)신청서 양식(.xlsx)을 업로드하세요. "
+            st.info("사이드바에서 초과근무(수당)신청서 양식(.xlsx)을 업로드하세요. "
                     "(기본 양식이 폴더에 있으면 자동으로 사용됩니다)")
             return
 
         if st.button(":material/receipt_long: 신청서 생성", type="primary", width='stretch',
-                     help="대체휴무 입력을 반영해 연장근무신청서를 채웁니다."):
+                     help="대체휴무 입력을 반영해 초과근무신청서를 채웁니다."):
             # 표에서 고른 대체휴무지급/대체휴무시간/비고를 일자별로 모은다.
             extras = {}
             for rec, (_, row) in zip(records, edited.iterrows()):
@@ -1380,7 +1380,7 @@ def render_overtime():
         # 생성된 결과가 있으면 완료 배너 + 다운로드를 항상 표시
         if st.session_state.get("ot_buf"):
             gen_result_banner(
-                "연장근무신청서가 완성됐어요",
+                "초과근무신청서가 완성됐어요",
                 f"{st.session_state['ot_count']}건 반영 · {st.session_state['ot_name']}",
             )
             st.download_button(

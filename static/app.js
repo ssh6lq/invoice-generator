@@ -1,6 +1,6 @@
 // ===== 상태 =====
 let OPTIONS = { purpose: [], payment: [], limits: {}, meal: [], note_examples: {} };
-let CONFIG = { expense_template: "비용청구양식.xlsm", overtime_template: "연장근무(수당)신청서_양식.xlsx" };
+let CONFIG = { expense_template: "비용청구양식.xlsm", overtime_template: "초과근무(수당)신청서_양식.xlsx" };
 let rcptFiles = [];           // File[]
 let analyzedNames = new Set();
 let rcptRows = [];
@@ -353,6 +353,7 @@ function markReviewDirty() {
   const ga = $("genArea"); if (ga) ga.classList.add("hidden");  // 검토 통과 전까지 다운로드 버튼 숨김
   const rr = $("reviewResult"); if (rr) rr.innerHTML = "";
   const cp = $("claimPreview"); if (cp) cp.innerHTML = "";
+  const gn = $("genNote"); if (gn) gn.innerHTML = "";  // 이전 생성 실패/성공 메시지도 함께 정리
   document.querySelectorAll("#rcptTable .cell-error").forEach((e) => e.classList.remove("cell-error"));
 }
 // 참여자 필수(식대) 목적인지 — 서버가 내려준 목록(OPTIONS.meal) 기준.
@@ -575,7 +576,7 @@ async function saveToClient(resp, fallbackName) {
   return { name, picked: false };
 }
 
-// ===== 연장근무 =====
+// ===== 초과근무 =====
 async function parseAttendance(files) {
   attFile = files[0]; if (!attFile) return;
   note($("attNote"), "info", "읽는 중…");
@@ -588,11 +589,11 @@ async function parseAttendance(files) {
     $("otMetrics").innerHTML =
       `<div class="metric"><div class="k">이름</div><div class="v">${esc(d.name) || "-"}</div></div>` +
       `<div class="metric"><div class="k">기간</div><div class="v">${d.year || "-"}.${d.month || "-"}</div></div>` +
-      `<div class="metric"><div class="k">연장근무 대상일</div><div class="v">${otRows.length}일</div></div>` +
+      `<div class="metric"><div class="k">초과근무 대상일</div><div class="v">${otRows.length}일</div></div>` +
       `<div class="metric"><div class="k">총 신청시간</div><div class="v"><span id="otTotalReq">${fmtHalf(otTotalReq())}</span>시간</div></div>`;
     renderAtt();
     $("otReviewCard").classList.remove("hidden"); $("otGenCard").classList.remove("hidden");
-    if (!otRows.length) note($("attNote"), "warn", "연장근무 대상일(승인 초과>0)이 없어요.");
+    if (!otRows.length) note($("attNote"), "warn", "초과근무 대상일이 없어요.");
   } catch (e) { note($("attNote"), "err", e.message); }
 }
 // 일자 표기: 연·월을 알면 YYYY.MM.DD, 모르면 'N일'로 폴백.
@@ -682,7 +683,7 @@ function renderAtt() {
   $("attTable").innerHTML = head + body;
   refreshOtTotal();
 }
-// 연장근무 전체 초기화: 파일·표·지표·입력값을 비우고 첫 화면으로 되돌린다.
+// 초과근무 전체 초기화: 파일·표·지표·입력값을 비우고 첫 화면으로 되돌린다.
 function resetOvertime() {
   attFile = null; otRows = []; otPeriod = { year: null, month: null };
   $("attTable").innerHTML = ""; $("otMetrics").innerHTML = "";
@@ -723,7 +724,7 @@ async function generateOvertime() {
   try {
     const resp = await fetch("/api/overtime/generate", { method: "POST", body: fd });
     if (!resp.ok) throw new Error(await errText(resp));
-    const r = await saveToClient(resp, "연장근무신청서_작성완료.xlsx");
+    const r = await saveToClient(resp, "초과근무신청서_작성완료.xlsx");
     if (r.aborted) note($("otGenNote"), "warn", "저장이 취소됐어요.");
     else note($("otGenNote"), "info", `<b>✅ 신청서가 다운로드됐어요</b><br/>${esc(r.name)} 가 내 PC에 저장됐어요.`);
   } catch (e) { note($("otGenNote"), "err", "생성 실패: " + e.message); }

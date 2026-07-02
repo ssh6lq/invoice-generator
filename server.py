@@ -43,7 +43,7 @@ import submission_store
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_EXPENSE_TPL = os.path.join(APP_DIR, "비용청구양식.xlsm")
-DEFAULT_OVERTIME_TPL = os.path.join(APP_DIR, "연장근무(수당)신청서_양식.xlsx")
+DEFAULT_OVERTIME_TPL = os.path.join(APP_DIR, "초과근무(수당)신청서_양식.xlsx")
 STATIC_DIR = os.path.join(APP_DIR, "static")
 
 XLSM_MIME = "application/vnd.ms-excel.sheet.macroEnabled.12"
@@ -405,11 +405,11 @@ async def expense_generate(
 
 
 # ======================================================================
-# 연장근무 API
+# 초과근무 API
 # ======================================================================
 @app.post("/api/overtime/parse")
 async def overtime_parse(attendance: UploadFile = File(...)):
-    """근태현황(.xlsx)을 읽어 연장근무 대상일 목록을 반환한다."""
+    """근태현황(.xlsx)을 읽어 초과근무 대상일 목록을 반환한다."""
     try:
         name, year, month, records = parse_attendance(await attendance.read())
     except Exception as e:  # noqa: BLE001
@@ -433,7 +433,7 @@ async def overtime_generate(
     payload: str = Form(...),
     template: UploadFile = File(None),
 ):
-    """연장근무신청서(.xlsx)를 채워 다운로드로 반환한다.
+    """초과근무신청서(.xlsx)를 채워 다운로드로 반환한다.
     payload(JSON): {extras:{day:{payoff,hours,note}}, dept_position:str}"""
     data = json.loads(payload)
     extras_in = data.get("extras", {})
@@ -452,7 +452,7 @@ async def overtime_generate(
         raise HTTPException(500, f"생성 실패: {e}")
     stamp = datetime.now().strftime("%Y%m%d_%H%M")
     who = (parse_attendance(att)[0] or "").strip() or "작성완료"
-    fname = f"연장근무신청서_{who}_{stamp}.xlsx"
+    fname = f"초과근무신청서_{who}_{stamp}.xlsx"
     return _download(buf.getvalue(), fname, XLSX_MIME, count=n)
 
 

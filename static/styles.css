@@ -299,7 +299,7 @@ table.grid td.num input{text-align:right;}
 #fbShotPreview{margin-top:8px;}
 #fbShotPreview img{max-width:100%; max-height:160px; border-radius:8px; border:1px solid var(--line); display:block;}
 
-/* 연장근무(야근) 검토 표: 모든 값·헤더 가운데 정렬로 통일, 상세 입력행만 왼쪽 정렬 */
+/* 초과근무(야근) 검토 표: 모든 값·헤더 가운데 정렬로 통일, 상세 입력행만 왼쪽 정렬 */
 #attTable th, #attTable td{text-align:center; white-space:nowrap;}
 #attTable tr.detail td{text-align:left;}
 #attTable .reqh{color:var(--blue-dark); font-weight:600;}

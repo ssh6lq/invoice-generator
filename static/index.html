@@ -75,7 +75,7 @@
       <div class="main">
         <div class="tabs">
           <button id="tab-expense" class="active" onclick="switchTab('expense')"><svg class="ic" viewBox="0 0 24 24" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1z"/><path d="M16 8H8M16 12H8M13 16H8"/></svg>비용·복지비 청구서</button>
-          <button id="tab-overtime" onclick="switchTab('overtime')"><svg class="ic" viewBox="0 0 24 24" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6.36 6.36 0 0 0 9 9 9 9 0 1 1-9-9z"/></svg>연장근무 수당 신청서</button>
+          <button id="tab-overtime" onclick="switchTab('overtime')"><svg class="ic" viewBox="0 0 24 24" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6.36 6.36 0 0 0 9 9 9 9 0 1 1-9-9z"/></svg>초과근무 수당 신청서</button>
         </div>
 
         <!-- ============ 비용청구 ============ -->
@@ -186,16 +186,16 @@
           </div>
         </section>
 
-        <!-- ============ 연장근무 ============ -->
+        <!-- ============ 초과근무 ============ -->
         <section id="panel-overtime" class="hidden">
-          <div class="hero"><h1>근태현황 파일로<br/>한 번에 연장근무신청서를 완성하세요</h1></div>
+          <div class="hero"><h1>근태현황 파일로<br/>한 번에 초과근무신청서를 완성하세요</h1></div>
           <details class="howto" id="howtoOvertime">
             <summary><svg class="ic" viewBox="0 0 24 24" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.2 1 2h6c0-.8.4-1.5 1-2A7 7 0 0 0 12 2z"/></svg>처음이신가요? 사용 방법 보기</summary>
             <div class="howto-body">
               <p class="howto-lead">그룹웨어의 <b>월간 근태현황</b> 파일을 첨부하면, 승인된 초과근무 날을 자동으로 찾아 드려요.</p>
               <div class="howto-step"><span class="num">1.</span><div><b>월간 근태 현황 파일을 업로드</b> — 승인받은 초과근무 날을 탐지해요.</div></div>
               <div class="howto-step"><span class="num">2.</span><div><b>대체휴무 반영</b> — 대체휴무로 쓴 시간은 신청 대상에서 제외해요.</div></div>
-              <div class="howto-step"><span class="num">3.</span><div><b>연장근무 신청서 생성</b> — 확정된 시간으로 신청서를 생성해요.</div></div>
+              <div class="howto-step"><span class="num">3.</span><div><b>초과근무 신청서 생성</b> — 확정된 시간으로 신청서를 생성해요.</div></div>
               <!-- <p class="howto-hint">날짜·근무시간 열이 있는 표준 근태현황 양식이면 인식됩니다.</p> -->
             </div>
           </details>
@@ -203,7 +203,7 @@
 
           <div class="card">
             <div class="step"><span class="num">1</span><span class="ttl">근태현황 업로드</span></div>
-            <p class="step-desc">월간 근태현황(.xlsx)을 올리면 연장근무 대상일을 자동으로 탐지합니다.</p>
+            <p class="step-desc">월간 근태현황(.xlsx)을 올리면 초과근무 대상일을 자동으로 탐지합니다.</p>
             <div class="dropzone" id="attDrop">
               <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4"/><path d="m8 8 4-4 4 4"/><path d="M5 14v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3"/></svg></div>
               <div class="hl">월간 근태현황 파일을 끌어다 놓거나 선택하세요</div>
@@ -215,8 +215,8 @@
           </div>
 
           <div class="card hidden" id="otReviewCard">
-            <div class="step"><span class="num">2</span><span class="ttl">연장근무 내역 검토</span><button type="button" class="resetlink" onclick="resetOvertime()">↺ 다른 파일로 다시</button></div>
-            <p class="step-desc">근태현황 파일에서 자동으로 추출한 연장근무 대상일이에요. <br><b>대체휴무를 사용한 날</b>은 대체휴무를 <b>O</b>로 변경 후, 시간(예: 1.5)을 입력하세요. 입력한 만큼 신청 시간에서 자동 차감됩니다.</p>
+            <div class="step"><span class="num">2</span><span class="ttl">초과근무 내역 검토</span><button type="button" class="resetlink" onclick="resetOvertime()">↺ 다른 파일로 다시</button></div>
+            <p class="step-desc">근태현황 파일에서 자동으로 추출한 초과근무 대상일이에요. <br><b>대체휴무를 사용한 날</b>은 대체휴무를 <b>O</b>로 변경 후, 시간(예: 1.5)을 입력하세요. 입력한 만큼 신청 시간에서 자동 차감됩니다.</p>
             <div class="metrics" id="otMetrics"></div>
             <div class="row" style="margin-bottom:14px;">
               <div><label class="fld">소속</label><input type="text" id="otDept"/></div>
@@ -226,7 +226,7 @@
           </div>
 
           <div class="card hidden" id="otGenCard">
-            <div class="step"><span class="num">3</span><span class="ttl">연장근무신청서 생성</span></div>
+            <div class="step"><span class="num">3</span><span class="ttl">초과근무신청서 생성</span></div>
             <p class="step-desc">승인된 초과 근로 시간으로 비용 청구서를 생성합니다.</p>
             <button class="btn primary" id="otGenBtn" onclick="generateOvertime()">신청서 생성 &amp; 다운로드</button>
             <div id="otGenNote"></div>
