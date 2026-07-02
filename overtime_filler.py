@@ -19,12 +19,15 @@ overtime_filler.py
 import re
 import math
 import zipfile
+from datetime import date
 from io import BytesIO
 
 import openpyxl
 
 # excel_filler 의 범용 zip/XML 헬퍼 재사용
-from excel_filler import _read_bytes, _sheet_path_for, _set_cell, _force_full_recalc
+from excel_filler import (
+    _read_bytes, _sheet_path_for, _set_cell, _force_full_recalc, _date_serial,
+)
 
 
 def _set_formula_cache(xml, coord, value):
@@ -218,9 +221,13 @@ def fill_overtime(template_path_or_bytes, attendance_path_or_bytes,
     sheet_path = _sheet_path_for(zin, FORM_SHEET)
     xml = zin.read(sheet_path).decode("utf-8")
 
-    # 기본정보: 월(C2), 부서명/직위(D7), 성명(D8)
+    # 기본정보: 월(C2), 작성일(D6=TODAY()), 부서명/직위(D7), 성명(D8)
     if month:
         xml = _set_cell(xml, "C2", "num", int(month))
+    # D6는 =TODAY() 수식 셀. '제한된 보기'(편집 사용 전)는 재계산을 안 하고 양식에
+    # 저장돼 있던 캐시값(예: 템플릿을 마지막으로 연 날짜)을 그대로 보여준다.
+    # 캐시를 생성 시점(오늘)으로 갱신해, 편집 사용 전에도 실제 작성일이 보이게 한다.
+    xml = _set_formula_cache(xml, "D6", str(_date_serial(date.today())))
     if dept_position:
         xml = _set_cell(xml, "D7", "str", str(dept_position).strip())
     if name:
