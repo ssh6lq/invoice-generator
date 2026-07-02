@@ -1,10 +1,10 @@
 services:
   invoice:
     build: .
-    image: invoice-generator
-    container_name: invoice-generator
+    image: hr-forms-gen
+    container_name: hr-forms-gen
     ports:
-      - "8000:8000"          # 호스트8000 → 컨테이너8000
+      - "2200:8000"          # 호스트8000 → 컨테이너8000
     env_file:
       - .env                 # 환경변수(.env)에서 읽어옴 (없으면 기본값 동작)
     volumes:
