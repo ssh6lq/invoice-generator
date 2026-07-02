@@ -380,17 +380,20 @@ async def expense_generate(
                                          "issues": issues})
     basic_info = {"dept": basic.get("dept"), "name": basic.get("name"),
                   "title": basic.get("title"), "card": basic.get("card")}
-    stamp = datetime.now().strftime("%Y%m%d_%H%M")
+    # 파일명: 소속법인명_{청구항목}청구서_이름_작성일 (예: 넥스노우_비용청구서_남소희_20260701)
+    stamp = datetime.now().strftime("%Y%m%d")
     who = (basic.get("name") or "").strip() or "작성완료"
+    ttl = str(basic.get("title") or "비용").strip()
+    company = str(basic.get("company") or "").strip()
+    base = "_".join(x for x in [company, f"{ttl}청구서", who, stamp] if x)
     try:
         if fmt == "xlsm":
             # 작성시트를 채운 원본 양식(.xlsm) — 사용자가 Excel에서 매크로를 직접 실행하는 버전
             buf, _start, n = fill_workbook(tpl, records, append=False,
                                            basic_info=basic_info)
-            return _download(buf.getvalue(), f"비용청구양식_{who}_{stamp}.xlsm",
-                             XLSM_MIME, count=n)
+            return _download(buf.getvalue(), f"{base}.xlsm", XLSM_MIME, count=n)
         buf, n = build_claim_xlsx(tpl, sort_for_claim(norm), basic_info=basic_info)
-        fname = f"비용청구서_{who}_{stamp}.xlsx"
+        fname = f"{base}.xlsx"
         # '제출용' 다운로드 = 실제 제출 행위로 간주해 경영지원팀 관리자 페이지에 기록한다.
         total_claim = sum(int(r["claim"] or 0) for r in norm)
         submission_store.add_submission(
@@ -438,6 +441,7 @@ async def overtime_generate(
     data = json.loads(payload)
     extras_in = data.get("extras", {})
     dept_position = data.get("dept_position") or None
+    company = str(data.get("company") or "").strip()
     extras = {int(k): v for k, v in extras_in.items()}
 
     tpl = _template_bytes(await template.read() if template else None,
@@ -450,9 +454,10 @@ async def overtime_generate(
                                dept_position=dept_position)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(500, f"생성 실패: {e}")
-    stamp = datetime.now().strftime("%Y%m%d_%H%M")
+    stamp = datetime.now().strftime("%Y%m%d")
     who = (parse_attendance(att)[0] or "").strip() or "작성완료"
-    fname = f"초과근무신청서_{who}_{stamp}.xlsx"
+    # 파일명: 소속법인명_초과근무신청서_이름_작성일
+    fname = "_".join(x for x in [company, "초과근무신청서", who, stamp] if x) + ".xlsx"
     return _download(buf.getvalue(), fname, XLSX_MIME, count=n)
 
 

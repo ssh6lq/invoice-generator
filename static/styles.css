@@ -126,6 +126,13 @@ textarea{
   border-radius:8px; background:#fff; color:var(--ink); font-size:14px; font-family:inherit; resize:vertical;
 }
 input:focus, select:focus, textarea:focus{outline:none; border-color:var(--blue); box-shadow:0 0 0 2px rgba(49,130,246,.18);}
+/* 브라우저 자동완성(autofill) 시 입히는 파란/노란 배경을 흰색으로 덮는다. */
+input:-webkit-autofill, input:-webkit-autofill:hover, input:-webkit-autofill:focus,
+select:-webkit-autofill, textarea:-webkit-autofill{
+  -webkit-box-shadow:0 0 0 1000px #fff inset; box-shadow:0 0 0 1000px #fff inset;
+  -webkit-text-fill-color:var(--ink); caret-color:var(--ink);
+  transition:background-color 9999s ease-in-out 0s;
+}
 .row{display:flex; gap:14px; flex-wrap:wrap;}
 .row > div{flex:1; min-width:160px;}
 .seg{display:inline-flex; gap:4px; background:#eaeef3; padding:4px; border-radius:10px;}

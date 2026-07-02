@@ -103,6 +103,13 @@
               </div>
             </div>
             <div class="row">
+              <div style="flex:0 0 auto;">
+                <label class="fld">소속법인명</label>
+                <select id="companySel" onchange="setCompany(this)" style="width:auto; min-width:150px;">
+                  <option value="엠클라우독">엠클라우독</option>
+                  <option value="넥스노우">넥스노우</option>
+                </select>
+              </div>
               <div><label class="fld">소속부서명</label><input type="text" id="dept"/></div>
               <div><label class="fld">성명</label><input type="text" id="name"/></div>
             </div>
@@ -219,7 +226,14 @@
             <p class="step-desc">근태현황 파일에서 자동으로 추출한 초과근무 대상일이에요. <br><b>대체휴무를 사용한 날</b>은 대체휴무를 <b>O</b>로 변경 후, 시간(예: 1.5)을 입력하세요. 입력한 만큼 신청 시간에서 자동 차감됩니다.</p>
             <div class="metrics" id="otMetrics"></div>
             <div class="row" style="margin-bottom:14px;">
-              <div><label class="fld">소속</label><input type="text" id="otDept"/></div>
+              <div style="flex:0 0 auto;">
+                <label class="fld">소속법인명</label>
+                <select id="otCompanySel" style="width:auto; min-width:150px;">
+                  <option value="엠클라우독">엠클라우독</option>
+                  <option value="넥스노우">넥스노우</option>
+                </select>
+              </div>
+              <div><label class="fld">부서명</label><input type="text" id="otDept"/></div>
               <div><label class="fld">직위</label><input type="text" id="otPos"/></div>
             </div>
             <div class="tbl-wrap"><table class="grid" id="attTable"></table></div>

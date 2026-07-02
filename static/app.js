@@ -6,6 +6,7 @@ let analyzedNames = new Set();
 let rcptRows = [];
 let urlCache = {};
 let title = "비용";
+let company = "엠클라우독";      // 소속법인명 (기본값)
 let attFile = null;
 let otRows = [];
 let otPeriod = { year: null, month: null };  // 근태현황 파일에서 읽은 연·월 (일자 표기에 사용)
@@ -167,6 +168,10 @@ function aiOverride(fd) {
 }
 
 // ===== 기초정보 =====
+function setCompany(el) {
+  company = el.value;
+  markReviewDirty();   // 소속법인명이 바뀌면 파일명이 달라지므로 재검토 상태로
+}
 function setTitle(btn) {
   document.querySelectorAll("#titleSeg button").forEach((b) => b.classList.remove("on"));
   btn.classList.add("on"); title = btn.dataset.v;
@@ -451,7 +456,7 @@ async function reviewClaims() {
   if (!filtered.length) { note($("reviewResult"), "warn", "검토할 데이터가 없어요. 먼저 영수증을 분석하세요."); return; }
   const welfare = isWelfare() ? (toInt($("welfare").value) || 0) * 10000 : 0;
   const fd = new FormData();
-  fd.append("payload", JSON.stringify({ rows: filtered.map((f) => f.r), basic: { dept, name, title }, welfare_budget: welfare }));
+  fd.append("payload", JSON.stringify({ rows: filtered.map((f) => f.r), basic: { dept, name, title, company }, welfare_budget: welfare }));
   if (expenseTpl) fd.append("template", expenseTpl);
   const btn = $("reviewBtn"); btn.disabled = true; btn.innerHTML = `<span class="spin"></span> 검토 중…`;
   markReviewDirty();
@@ -515,7 +520,7 @@ async function generateExpense(fmt) {
   const welfare = isWelfare() ? (toInt($("welfare").value) || 0) * 10000 : 0;
   const card = ($("cardLast4") && $("cardLast4").value.trim()) || "";
   const fd = new FormData();
-  fd.append("payload", JSON.stringify({ rows, basic: { dept, name, title, card }, welfare_budget: welfare, fmt }));
+  fd.append("payload", JSON.stringify({ rows, basic: { dept, name, title, card, company }, welfare_budget: welfare, fmt }));
   if (expenseTpl) fd.append("template", expenseTpl);
   const btn = fmt === "xlsm" ? $("genXlsmBtn") : $("genBtn");
   const other = fmt === "xlsm" ? $("genBtn") : $("genXlsmBtn");
@@ -715,9 +720,10 @@ async function generateOvertime() {
     };
   });
   const parts = [$("otDept").value.trim(), $("otPos").value.trim()].filter(Boolean);
+  const company = ($("otCompanySel") && $("otCompanySel").value) || "";
   const fd = new FormData();
   fd.append("attendance", attFile);
-  fd.append("payload", JSON.stringify({ extras, dept_position: parts.join(" / ") || null }));
+  fd.append("payload", JSON.stringify({ extras, dept_position: parts.join(" / ") || null, company }));
   if (overtimeTpl) fd.append("template", overtimeTpl);
   const btn = $("otGenBtn"); btn.disabled = true; btn.innerHTML = `<span class="spin"></span> 생성 중…`;
   note($("otGenNote"), "info", "");
