@@ -31,3 +31,6 @@ streamlit.log
 # 문의/이슈·청구서 제출내역 저장소(로컬 SQLite) — 실제 사용자 데이터라 추적하지 않는다
 feedback.db
 submissions.db
+
+# Docker: compose가 마운트하는 데이터 폴더(사용자 DB) — 추적 안 함
+/data/

@@ -1,0 +1,14 @@
+# FastAPI 서버(server.py) 전용 최소 의존성 — Docker 이미지용
+# (구버전 Streamlit app.py 는 requirements.txt 를 쓴다)
+
+# 웹 서버
+fastapi>=0.115
+uvicorn[standard]>=0.30
+python-multipart>=0.0.9
+
+# 영수증 파싱 (LangChain + OpenAI 호환 클라이언트)
+langchain-openai>=0.1.7
+langchain-core>=0.2.0
+
+# 엑셀 양식 채우기
+openpyxl>=3.1
