@@ -311,23 +311,23 @@ function renderReview() {
     ? "복지비는 한도까지 영수일자 순으로 청구금액이 자동 배분돼요. 목적/거래처 등은 수정 가능."
     : "추출된 내역으로 양식을 작성합니다. 목적 선택에 따라 청구금액이 목적별 한도로 자동 조정돼요.";
   $("bulkPays").innerHTML = OPTIONS.payment.map((p) => `<button class="${lastBulk.payment === p ? "on" : ""}" onclick="bulkApply('payment','${esc(p)}')">${esc(p)}</button>`).join("");
-  const head = `<tr><th>#</th><th>영수일자</th><th>거래처명</th><th>목적</th><th>참여자</th><th>영수금액</th><th>청구금액(자동)</th><th>결제방식</th><th>영수시간</th><th>지역</th><th>비고</th><th></th></tr>`;
+  const head = `<tr><th>#</th><th>영수일자</th><th>거래처명</th><th>목적</th><th>영수금액</th><th>청구금액(자동)</th><th>결제방식</th><th>영수시간</th><th>지역</th><th>참여자</th><th>비고</th><th></th></tr>`;
   let capped = 0;  // 비용 모드에서 목적 한도로 깎인 건수(안내용)
   const rowsHtml = rcptRows.map((r, i) => {
     // 청구금액은 모드와 무관하게 동일한 입력박스로 통일 — 자동값(r.claim)이 채워지지만 직접 수정도 가능.
     const lim = OPTIONS.limits[r.purpose], amt = toInt(r.amount);
     if (!welfare && lim != null && amt != null && amt > lim) capped++;
-    const claimCell = `<input type="text" data-cell="${i}:claim" value="${esc(r.claim)}" oninput="upd(${i},'claim',this.value)"/>`;
+    const claimCell = `<input type="text" inputmode="numeric" data-cell="${i}:claim" value="${fmt(r.claim)}" oninput="updAmount(${i},this,'claim')"/>`;
     return `<tr class="drow"><td>${i + 1}</td>
       <td><input type="text" data-cell="${i}:date" value="${esc(r.date)}" title="${esc(r.date)}" placeholder="YYYY.MM.DD" oninput="updDate(${i},this)"/></td>
       <td><input type="text" data-cell="${i}:store" value="${esc(r.store)}" title="${esc(r.store)}" oninput="upd(${i},'store',this.value)"/></td>
       <td><select data-cell="${i}:purpose" title="${esc(r.purpose)}" onchange="upd(${i},'purpose',this.value)">${optTags(OPTIONS.purpose, r.purpose)}</select></td>
-      <td><input type="text" data-cell="${i}:participants" value="${esc(r.participants)}" title="${esc(r.participants)}" placeholder="예: 홍길동, 김철수" oninput="upd(${i},'participants',this.value)"/></td>
-      <td class="num"><input type="text" data-cell="${i}:amount" value="${esc(r.amount)}" oninput="upd(${i},'amount',this.value)"/></td>
+      <td class="num"><input type="text" inputmode="numeric" data-cell="${i}:amount" value="${fmt(r.amount)}" oninput="updAmount(${i},this,'amount')"/></td>
       <td class="num">${claimCell}</td>
       <td><select data-cell="${i}:payment" onchange="upd(${i},'payment',this.value)">${optTags(OPTIONS.payment, r.payment)}</select></td>
       <td><input type="text" data-cell="${i}:time" value="${esc(r.time)}" placeholder="HH:MM" oninput="updTime(${i},this)"/></td>
       <td><input type="text" data-cell="${i}:region" value="${esc(r.region)}" title="${esc(r.region)}" oninput="upd(${i},'region',this.value)"/></td>
+      <td><input type="text" data-cell="${i}:participants" value="${esc(r.participants)}" title="${esc(r.participants)}" placeholder="${esc(participantPlaceholder(r.purpose))}" oninput="upd(${i},'participants',this.value)"/></td>
       <td><input type="text" data-cell="${i}:note" value="${esc(r.note)}" title="${esc(r.note)}" placeholder="${esc(noteExample(r.purpose))}" oninput="upd(${i},'note',this.value)"/></td>
       <td class="rowact"><button class="x" title="이 행 삭제" onclick="delRow(${i})">✕</button></td></tr>`;
   });
@@ -359,6 +359,12 @@ function markReviewDirty() {
 function isMealPurpose(p) { return (OPTIONS.meal || []).includes(String(p || "").trim()); }
 // 목적별 비고작성예시 — 비고칸 placeholder(얕은 글씨)로 안내.
 function noteExample(p) { return (OPTIONS.note_examples || {})[String(p || "").trim()] || ""; }
+// 참여자칸 안내문: 식대류(참여자 필수)면 입력 예시, 목적이 정해졌는데 식대가 아니면 '참여자 불필요'.
+function participantPlaceholder(p) {
+  const s = String(p || "").trim();
+  if (!s) return "예: 홍길동, 김철수";      // 목적 미선택 → 기존 예시
+  return isMealPurpose(s) ? "예: 홍길동, 김철수" : "참여자 불필요";
+}
 // 식대 목적인데 참여자가 비어 있으면 기초정보 성명으로 자동 채운다.
 function autofillParticipant(r) {
   if (isMealPurpose(r.purpose) && !String(r.participants || "").trim()) {
@@ -381,6 +387,28 @@ function upd(i, key, val) {
   if (["purpose", "claim", "amount", "date"].includes(key)) renderReview();
 }
 // 영수일자: 숫자만 쳐도 YYYY.MM.DD로 자동 정리. 복지비는 일자순 배분이라 재계산이 필요.
+// 영수금액·청구금액: 숫자만 쳐도 1,000,000 처럼 천단위 콤마를 실시간으로 넣는다.
+// 모델(rcptRows)에는 콤마 없는 숫자문자열만 저장해 검증/제출 로직은 그대로 동작한다.
+function updAmount(i, el, key) {
+  markReviewDirty();
+  // 커서 앞쪽 '숫자 개수'를 기억했다가, 콤마 삽입 후 같은 숫자 위치로 커서를 복원한다.
+  const digits = el.value.replace(/[^\d]/g, "");
+  const caretDigits = el.value.slice(0, el.selectionStart ?? el.value.length).replace(/[^\d]/g, "").length;
+  const formatted = digits ? Number(digits).toLocaleString() : "";
+  el.value = formatted;
+  let pos = 0, seen = 0;
+  while (pos < formatted.length && seen < caretDigits) { if (formatted[pos] >= "0" && formatted[pos] <= "9") seen++; pos++; }
+  try { el.setSelectionRange(pos, pos); } catch (e) {}
+  rcptRows[i][key] = digits;
+  if (key === "amount") {
+    if (isWelfare()) { recomputeWelfare(); renderReview(); }
+    else {
+      autoClaimExpense(i);  // 영수금액이 바뀌면 그 목적 한도로 청구금액 자동 재계산
+      const claimEl = document.querySelector(`#rcptTable [data-cell="${i}:claim"]`);
+      if (claimEl) claimEl.value = fmt(rcptRows[i].claim);  // 포커스 없는 청구금액 칸만 직접 갱신(커서 튐 방지)
+    }
+  }
+}
 function updDate(i, el) {
   markReviewDirty();
   const f = fmtDateInput(el.value);
@@ -459,11 +487,12 @@ function renderClaimPreview(preview) {
   const won = (v) => (v == null || v === "") ? "" : Number(v).toLocaleString();
   const body = preview.map((r, i) => `<tr>
     <td>${i + 1}</td><td>${esc(r.date)}</td><td>${esc(r.store)}</td><td>${esc(r.purpose)}</td>
-    <td>${esc(r.participants)}</td><td>${esc(r.note)}</td><td>${esc(r.payment)}</td>
+    <td>${esc(r.payment)}</td>
     <td class="num">${won(r.amount)}</td><td class="num">${won(r.claim)}</td>
-    <td>${esc(r.time)}</td><td>${esc(r.region)}</td></tr>`).join("");
+    <td>${esc(r.time)}</td><td>${esc(r.region)}</td>
+    <td>${esc(r.participants)}</td><td>${esc(r.note)}</td></tr>`).join("");
   cp.innerHTML = `<div class="preview-title">📄 비용청구서 미리보기 <span class="muted">(결제방식·영수일자 순 정렬)</span></div>
-    <div class="tbl-wrap"><table class="grid preview"><tr><th>#</th><th>영수일자</th><th>거래처명</th><th>목적</th><th>참여자</th><th>비고</th><th>결제방식</th><th>영수금액</th><th>청구금액</th><th>시간</th><th>지역</th></tr>${body}</table></div>`;
+    <div class="tbl-wrap"><table class="grid preview"><tr><th>#</th><th>영수일자</th><th>거래처명</th><th>목적</th><th>결제방식</th><th>영수금액</th><th>청구금액</th><th>시간</th><th>지역</th><th>참여자</th><th>비고</th></tr>${body}</table></div>`;
 }
 
 // 개인형법인카드 결제 행이 있으면 법인카드 뒷4자리 입력을 노출(매크로 서명 단계 대체).
@@ -748,6 +777,23 @@ async function fetchExpenseOptions() {
   } catch {}
 }
 
+// select가 화면 하단에 있으면 브라우저가 옵션 목록을 위쪽으로 펼치는데,
+// 클릭 시점에 아래쪽 여백을 미리 확보해 항상 아래로 펼쳐지도록 보정한다.
+function setupSelectDropDirection() {
+  const NEEDED = 320;
+  document.addEventListener("mousedown", (ev) => {
+    const sel = ev.target.closest("select");
+    if (!sel) return;
+    const rect = sel.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    if (spaceBelow >= NEEDED) return;
+    document.body.style.paddingBottom = NEEDED + "px";
+    window.scrollBy({ top: NEEDED - spaceBelow });
+    const restore = () => { document.body.style.paddingBottom = ""; };
+    sel.addEventListener("blur", restore, { once: true });
+  });
+}
+
 // ===== 초기화 =====
 async function init() {
   setupDrop($("rcptDrop"), $("rcptInput"), addRcptFiles);
@@ -759,6 +805,7 @@ async function init() {
     localStorage.setItem("howtoSeen", "1");
   }
   ["oaModel", "cuBase", "cuModel", "aiKey"].forEach((id) => $(id).addEventListener("change", saveAi));
+  setupSelectDropDirection();
   // 성명을 (나중에) 입력/변경하면 식대 목적인데 비어 있는 참여자를 성명으로 채운다.
   $("name").addEventListener("change", () => {
     let changed = false;

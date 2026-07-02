@@ -164,10 +164,9 @@
             <div id="claimPreview"></div>
             <div id="genArea" class="hidden">
               <div class="gen-actions">
-                <button class="btn ghost" id="genXlsmBtn" onclick="generateExpense('xlsm')">양식 파일 다운로드 (.xlsm)</button>
-                <button class="btn primary" id="genBtn" onclick="generateExpense('xlsx')">제출용 청구서 다운로드 (.xlsx)</button>
+                <button class="btn ghost" id="genXlsmBtn" onclick="generateExpense('xlsm')" title="엑셀에서 직접 매크로를 돌리는 기존 방식">원본 양식(매크로) 다운로드 (.xlsm)</button>
+                <button class="btn primary" id="genBtn" onclick="generateExpense('xlsx')" title="매크로 완료한 최종 비용청구서(+교통비상세) — 바로 제출용">제출용 청구서 (자동 매크로) 다운로드 (.xlsx)</button>
               </div>
-              <p class="gen-hint muted">· <b>제출용 청구서(.xlsx)</b>: 정렬·합계까지 끝난 최종 비용청구서(+교통비상세) — 바로 제출용<br/>· <b>양식 파일(.xlsm)</b>: 작성시트를 채운 원본 양식 — 엑셀에서 직접 매크로를 돌리는 기존 방식</p>
               <details class="macro-inline" id="macroGuide">
                 <summary>다운로드한 청구서에서 매크로가 차단되나요? — 최초 1회 설정</summary>
                 <div class="howto-body">

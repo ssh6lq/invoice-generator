@@ -198,17 +198,19 @@ table.grid td.num input{text-align:right;}
 /* 입력칸을 세로 가운데 정렬 + 위아래 여백을 동일하게 줘 행 간격을 균일하게. */
 #rcptTable td{vertical-align:middle; padding-top:6px; padding-bottom:6px;}
 #rcptTable td input, #rcptTable td select{padding:0 8px;}
+/* select는 오른쪽 네이티브 내림표시와 글자가 겹치지 않도록 오른쪽 여백을 넉넉히 준다. */
+#rcptTable td select{padding-right:22px;}
 #rcptTable th, #rcptTable td{padding-left:6px; padding-right:6px;}
 #rcptTable th:nth-child(1),  #rcptTable td:nth-child(1) {width:30px; text-align:center; color:#9aa3af;} /* # */
 #rcptTable th:nth-child(2),  #rcptTable td:nth-child(2) {width:94px;}   /* 영수일자 */
 #rcptTable th:nth-child(3),  #rcptTable td:nth-child(3) {width:118px;}  /* 거래처명 */
-#rcptTable th:nth-child(4),  #rcptTable td:nth-child(4) {width:92px;}   /* 목적 */
-#rcptTable th:nth-child(5),  #rcptTable td:nth-child(5) {width:120px;}  /* 참여자 */
-#rcptTable th:nth-child(6),  #rcptTable td:nth-child(6) {width:90px;}   /* 영수금액 */
-#rcptTable th:nth-child(7),  #rcptTable td:nth-child(7) {width:96px;}   /* 청구금액 */
-#rcptTable th:nth-child(8),  #rcptTable td:nth-child(8) {width:150px;}  /* 결제방식 */
-#rcptTable th:nth-child(9),  #rcptTable td:nth-child(9) {width:76px;}   /* 영수시간 */
-#rcptTable th:nth-child(10), #rcptTable td:nth-child(10){width:70px;}   /* 지역 */
+#rcptTable th:nth-child(4),  #rcptTable td:nth-child(4) {width:112px;}  /* 목적 */
+#rcptTable th:nth-child(5),  #rcptTable td:nth-child(5) {width:92px;}   /* 영수금액 (백만원 기준 통일) */
+#rcptTable th:nth-child(6),  #rcptTable td:nth-child(6) {width:92px;}   /* 청구금액 (백만원 기준 통일) */
+#rcptTable th:nth-child(7),  #rcptTable td:nth-child(7) {width:150px;}  /* 결제방식 */
+#rcptTable th:nth-child(8),  #rcptTable td:nth-child(8) {width:76px;}   /* 영수시간 */
+#rcptTable th:nth-child(9),  #rcptTable td:nth-child(9) {width:70px;}   /* 지역 */
+#rcptTable th:nth-child(10), #rcptTable td:nth-child(10){width:120px;}  /* 참여자 */
 #rcptTable th:nth-child(11), #rcptTable td:nth-child(11){width:94px;}   /* 비고 */
 #rcptTable th:nth-child(12), #rcptTable td:nth-child(12){width:40px;}   /* 행 삭제 */
 /* 매크로 검토 오류 셀 강조 (매크로 노란 음영 ColorIndex 36 대응) */
