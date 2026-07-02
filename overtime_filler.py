@@ -19,7 +19,6 @@ overtime_filler.py
 import re
 import math
 import zipfile
-from datetime import date
 from io import BytesIO
 
 import openpyxl
@@ -219,12 +218,9 @@ def fill_overtime(template_path_or_bytes, attendance_path_or_bytes,
     sheet_path = _sheet_path_for(zin, FORM_SHEET)
     xml = zin.read(sheet_path).decode("utf-8")
 
-    # 기본정보: 월(C2), 작성일(C6), 부서명/직위(D7), 성명(D8)
+    # 기본정보: 월(C2), 부서명/직위(D7), 성명(D8)
     if month:
         xml = _set_cell(xml, "C2", "num", int(month))
-    # 작성일(D6): =TODAY() 수식은 편집 활성화 전엔 재계산 안 됨 → 오늘 날짜를 직접 기입
-    today_serial = (date.today() - date(1899, 12, 30)).days
-    xml = _set_cell(xml, "D6", "num", today_serial)
     if dept_position:
         xml = _set_cell(xml, "D7", "str", str(dept_position).strip())
     if name:
