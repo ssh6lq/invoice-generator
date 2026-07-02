@@ -14,12 +14,6 @@
       "port": 8011
     },
     {
-      "name": "invoice-web-verify",
-      "runtimeExecutable": ".venv\\Scripts\\python.exe",
-      "runtimeArgs": ["-m", "uvicorn", "server:app", "--host", "127.0.0.1", "--port", "8021"],
-      "port": 8021
-    },
-    {
       "name": "invoice-web-mac",
       "runtimeExecutable": "/Users/sso/Downloads/develop/vibe_artifact/.venv/bin/python",
       "runtimeArgs": ["-m", "uvicorn", "server:app", "--host", "127.0.0.1", "--port", "8011"],

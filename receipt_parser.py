@@ -24,7 +24,7 @@ class Receipt(BaseModel):
     )
     store: Optional[str] = Field(
         None,
-        description="상호명(거래처명). '가맹점 정보'/'판매자 정보' 구분이 없는 일반 영수증의 "
+        description="상호명. '가맹점 정보'/'판매자 정보' 구분이 없는 일반 영수증의 "
                     "상호. 없으면 null",
     )
     amount: Optional[int] = Field(
