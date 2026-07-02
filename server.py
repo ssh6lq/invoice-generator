@@ -423,7 +423,7 @@ async def overtime_parse(attendance: UploadFile = File(...)):
         "clock_out": _sec_to_hhmm(r["clock_out"]),
         "work_start": _sec_to_hhmm(r["clock_in"] + 9 * 3600),  # 근무시작 = 출근+9h
         "work_end": _sec_to_hhmm(r["clock_out"]),              # 근무종료 = 퇴근
-        "approved_ot": _sec_to_hhmm(r["approved_ot"]),
+        "approved_ot": _sec_to_hms(r["approved_ot"]),  # 초 단위까지 노출(예: 01:29:58)
         "payoff": "X", "hours": "", "note": "",   # 기본: 대체휴무 미지급
         "exclude": "", "exclude_reason": "",      # 제외할 시간 / 제외 사유
     } for r in records]
@@ -539,6 +539,15 @@ def _sec_to_hhmm(sec):
         return ""
     h, m = divmod(int(sec) // 60, 60)
     return f"{h:02d}:{m:02d}"
+
+
+def _sec_to_hms(sec):
+    """초 단위까지 표시(HH:MM:SS). 승인초과 원값 노출용."""
+    if sec is None:
+        return ""
+    h, rem = divmod(int(sec), 3600)
+    m, s = divmod(rem, 60)
+    return f"{h:02d}:{m:02d}:{s:02d}"
 
 
 def _download(data: bytes, filename: str, mime: str, count=None):
