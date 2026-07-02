@@ -1,0 +1,25 @@
+# 이미지에 넣지 않을 것들 (빌드 속도·용량·보안)
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+.git/
+.gitignore
+
+# 로컬 개발용 설정
+.devcontainer/
+
+# 비밀/환경파일 (이미지에 넣으면 안 됨)
+.env
+*.key
+
+# 로컬 사용자 데이터 DB (볼륨으로 마운트해서 쓴다)
+feedback.db
+submissions.db
+
+# OS
+.DS_Store
+streamlit.log
