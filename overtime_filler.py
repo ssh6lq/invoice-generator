@@ -17,6 +17,7 @@ overtime_filler.py
 """
 
 import re
+import math
 import zipfile
 from io import BytesIO
 
@@ -24,6 +25,44 @@ import openpyxl
 
 # excel_filler 의 범용 zip/XML 헬퍼 재사용
 from excel_filler import _read_bytes, _sheet_path_for, _set_cell, _force_full_recalc
+
+
+def _set_formula_cache(xml, coord, value):
+    """수식 셀(<f>)은 그대로 두고 캐시값(<v>)만 설정/교체한다.
+    다운로드 파일을 '제한된 보기'로 열면 Excel이 수식을 재계산하지 않아 신청시간이
+    0(저장된 캐시값)으로 보인다 → 미리 계산한 값을 캐시로 넣어 바로 보이게 한다.
+    ('편집 사용'을 누르면 어차피 재계산되어 자동 보정되므로 안전.)
+    수식이 없는 셀이면 그대로 둔다."""
+    m = re.search(r'<c r="%s"((?:\s+[^>]*?)?)(/>|>.*?</c>)' % re.escape(coord), xml, re.S)
+    if not m:
+        return xml
+    attrs, body = m.group(1), m.group(2)
+    fm = re.search(r'<f\b[^>]*>.*?</f>|<f\b[^>]*/>', body, re.S)
+    if not fm:
+        return xml  # 수식 셀이 아니면 건드리지 않음
+    new_attrs = re.sub(r'\s+t="[^"]*"', '', attrs)   # 결과는 숫자 → t 속성 제거
+    new_cell = f'<c r="{coord}"{new_attrs}>{fm.group(0)}<v>{value}</v></c>'
+    return xml[:m.start()] + new_cell + xml[m.end():]
+
+
+def _nf(x):
+    """캐시값 숫자 포맷: 0 / 2.5 / 5 처럼 깔끔하게."""
+    return "%g" % round(float(x), 4)
+
+
+def _to_hours(s):
+    """'1' / '1.5' / '1:30' → 소수 시간(float). 빈값/이상값 → 0.0.
+    양식 N(제외할 시간)·Q(대체휴무 시간)는 '시간 숫자'를 빼므로 항상 시간 단위로 저장한다."""
+    s = str(s or "").strip()
+    if not s:
+        return 0.0
+    if ":" in s:
+        sec = _parse_hms(s)
+        return (sec / 3600.0) if sec is not None else 0.0
+    try:
+        return float(s)
+    except ValueError:
+        return 0.0
 
 FORM_SHEET = "양식"
 STANDARD_WORK_SECONDS = 9 * 3600   # 정규근무 9시간(점심 포함)
@@ -71,6 +110,33 @@ def _set_hours_cell(xml, ref, val):
         return _set_cell(xml, ref, "str", s)
 
 
+def _find_header_row(ws, max_scan=15):
+    """'일자' 헤더가 있는 행을 찾는다. 양식별로 헤더 행 위치가 다를 수 있다."""
+    for r in range(1, max_scan + 1):
+        for c in range(1, ws.max_column + 1):
+            if str(ws.cell(r, c).value or "").strip() == "일자":
+                return r
+    return 7  # 못 찾으면 구양식 기준으로 폴백
+
+
+def _find_ot_column(ws, header_row):
+    """'승인 초과 근로시간' 합계 열을 찾는다.
+    - 구양식: 헤더행에 '승인 초과 근로시간' 단일 컬럼.
+    - 신양식: 상위 그룹행(헤더행-1)에 '승인' 병합헤더 + 헤더행에 '초과근로시간' 합계 컬럼
+              (그 옆 연장/야간/휴일 등은 세부 내역이라 다른 값이므로 제외).
+    못 찾으면 None (호출부에서 명확히 에러 처리)."""
+    for c in range(1, ws.max_column + 1):
+        if str(ws.cell(header_row, c).value or "").strip() == "승인 초과 근로시간":
+            return c
+    if header_row > 1:
+        for c in range(1, ws.max_column + 1):
+            grp = str(ws.cell(header_row - 1, c).value or "").strip()
+            sub = str(ws.cell(header_row, c).value or "").strip()
+            if grp == "승인" and sub in ("초과근로시간", "초과 근로시간"):
+                return c
+    return None
+
+
 # ---------------------------------------------------------------- 근태 읽기
 def parse_attendance(src_path_or_bytes):
     """
@@ -92,15 +158,19 @@ def parse_attendance(src_path_or_bytes):
     if len(period) >= 6 and period[:6].isdigit():
         year, month = int(period[:4]), int(period[4:6])
 
-    # 헤더가 7행, 데이터 8행부터. 열: B(일자) C(출근) F(퇴근) O(승인초과)
-    col = {c.value: c.column for c in ws[7] if c.value}
+    # 헤더 행은 양식마다 다를 수 있어 '일자' 텍스트로 찾는다.
+    # 열: B(일자) C(출근) F(퇴근) + 승인 초과 근로시간(구양식 단일열/신양식 그룹+합계열)
+    header_row = _find_header_row(ws)
+    col = {c.value: c.column for c in ws[header_row] if c.value}
     c_date = col.get("일자", 2)
     c_in = col.get("출근시간", 3)
     c_out = col.get("퇴근시간", 6)
-    c_ot = col.get("승인 초과 근로시간", 15)
+    c_ot = _find_ot_column(ws, header_row)
+    if c_ot is None:
+        raise ValueError("근태현황 양식에서 '승인 초과 근로시간' 열을 찾을 수 없습니다.")
 
     records = []
-    for r in range(8, ws.max_row + 1):
+    for r in range(header_row + 1, ws.max_row + 1):
         dval = ws.cell(r, c_date).value
         if not dval:
             continue
@@ -157,15 +227,20 @@ def fill_overtime(template_path_or_bytes, attendance_path_or_bytes,
         xml = _set_cell(xml, "D8", "str", name)
 
     # 일자별 행 채우기 (양식: 1일=17행, day -> 16+day)
+    total_s = 0.0   # 신청시간 합계(S12) 캐시값
     for rec in records:
         day = rec["day"]
         r = 16 + day
         i_sec = rec["clock_in"] + STANDARD_WORK_SECONDS   # 근무시작 = 출근+9h
-        j_sec = rec["clock_out"]                          # 근무종료 = 퇴근
-        xml = _set_cell(xml, f"I{r}", "num", repr(_fraction(i_sec)))
-        xml = _set_cell(xml, f"J{r}", "num", repr(_fraction(j_sec)))
-        xml = _set_cell(xml, f"L{r}", "num", repr(_fraction(i_sec)))  # 실 근무시작
-        xml = _set_cell(xml, f"M{r}", "num", repr(_fraction(j_sec)))  # 실 근무종료
+        j_sec = rec["clock_out"]                          # 근무종료 = 퇴근(실제)
+        ot_sec = rec.get("approved_ot", 0) or 0           # 승인 초과 근로시간
+        # 신청시간을 '승인초과 기준'으로: 실근무종료(M) = 근무시작 + 승인초과.
+        # 양식 수식 S = (M-L)*24 - N - Q = 승인초과 - 제외 - 대체휴무 가 된다.
+        m_sec = i_sec + ot_sec
+        xml = _set_cell(xml, f"I{r}", "num", repr(_fraction(i_sec)))   # 근무시작(표시)
+        xml = _set_cell(xml, f"J{r}", "num", repr(_fraction(j_sec)))   # 근무종료(표시=퇴근)
+        xml = _set_cell(xml, f"L{r}", "num", repr(_fraction(i_sec)))   # 실 근무시작
+        xml = _set_cell(xml, f"M{r}", "num", repr(_fraction(m_sec)))   # 실 근무종료 = 근무시작+승인초과
 
         # 사용자가 표에서 고른 값: 대체휴무지급(P)·대체휴무시간(Q)·비고(R)
         # 신청시간(S) 수식 = ROUNDDOWN(MAX(0,(근무시간) - N - Q)*2)/2 이고,
@@ -178,15 +253,46 @@ def fill_overtime(template_path_or_bytes, attendance_path_or_bytes,
             payoff = "X"  # 기본: 대체휴무 미지급 → 전체 신청
         xml = _set_cell(xml, f"P{r}", "str", payoff)
 
+        # 대체휴무 시간(Q) — 시간 단위 숫자로 기록(양식 수식이 그대로 빼므로).
         hours = str(ex.get("hours", "") or "").strip()
+        q_val = 0.0
         if payoff == "O" and hours:
-            xml = _set_hours_cell(xml, f"Q{r}", hours)
+            q_val = _to_hours(hours)
+            xml = _set_cell(xml, f"Q{r}", "num", _nf(q_val))
         else:
             xml = _set_cell(xml, f"Q{r}", "str", "")  # 비움 → 수식이 0으로 처리
+
+        # 제외할 시간(N)·제외 사유(O) — 사용자가 입력하면 신청시간에서 차감.
+        exclude = str(ex.get("exclude", "") or "").strip()
+        n_val = _to_hours(exclude)
+        if n_val > 0:
+            xml = _set_cell(xml, f"N{r}", "num", _nf(n_val))
+        else:
+            xml = _set_cell(xml, f"N{r}", "str", "")
+        reason = str(ex.get("exclude_reason", "") or "").strip()
+        xml = _set_cell(xml, f"O{r}", "str", reason)
 
         note = str(ex.get("note", "") or "").strip()
         if note:
             xml = _set_cell(xml, f"R{r}", "str", note)
+
+        # 수식 결과(근무시간 K·신청시간 S·지급시간 T)를 양식 수식과 똑같이 미리 계산해
+        # 캐시값으로 넣는다. 제한된 보기에서도 0 대신 실제 값이 보인다.
+        eps = 1e-9
+        frac = (j_sec - i_sec) / DAY_SECONDS          # K(근무시간): MOD(J-I,1) = 퇴근-근무시작
+        mod1 = frac - math.floor(frac)
+        k_val = math.floor(mod1 * 24 * 2 + eps) / 2   # 근무시간(0.5h 단위)
+        # S(신청시간): (M-L)*24 - N - Q = 승인초과 - 제외 - 대체휴무
+        base = max(0.0, ot_sec / 3600.0 - n_val - q_val)
+        s_val = math.floor(base * 2 + eps) / 2
+        total_s += s_val
+        xml = _set_formula_cache(xml, f"K{r}", _nf(k_val))
+        xml = _set_formula_cache(xml, f"S{r}", _nf(s_val))   # 신청시간
+        xml = _set_formula_cache(xml, f"T{r}", _nf(s_val))   # 지급시간(=신청시간)
+
+    # 합계(S12 신청 / T12 지급) 캐시값
+    xml = _set_formula_cache(xml, "S12", _nf(total_s))
+    xml = _set_formula_cache(xml, "T12", _nf(total_s))
 
     out = BytesIO()
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zout:

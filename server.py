@@ -14,6 +14,7 @@ Streamlit 대신 FastAPI로 다시 만든 버전. 사내망 다중 사용자용.
 import io
 import os
 import json
+import secrets
 import traceback
 from datetime import datetime
 
@@ -23,8 +24,9 @@ try:
 except Exception:  # noqa: BLE001
     pass
 
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import Depends, FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import StreamingResponse, FileResponse
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -32,8 +34,12 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from receipt_parser import Receipt, SYSTEM_PROMPT, _image_to_data_url
 from excel_filler import (
     fill_workbook, get_dropdown_options, get_support_limits, _to_date,
+    validate_claims, sort_for_claim, build_claim_xlsx, get_note_examples,
+    MEAL_PURPOSES,
 )
 from overtime_filler import parse_attendance, fill_overtime
+import feedback_store
+import submission_store
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_EXPENSE_TPL = os.path.join(APP_DIR, "비용청구양식.xlsm")
@@ -54,7 +60,26 @@ ENV_API_KEY = (os.getenv("RECEIPT_API_KEY")
                or os.getenv("RECEIPT_BEARER")
                or os.getenv("OPENAI_API_KEY", ""))
 
+# 문의/이슈 관리자 페이지 보호(HTTP Basic) — .env의 ADMIN_PASSWORD로만 설정한다.
+ADMIN_USER = os.getenv("ADMIN_USER", "admin")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
+_admin_security = HTTPBasic()
+
+
+def require_admin(credentials: HTTPBasicCredentials = Depends(_admin_security)):
+    """관리자 페이지/API용 인증. 타이밍 공격 방지를 위해 compare_digest로 비교한다."""
+    if not ADMIN_PASSWORD:
+        raise HTTPException(500, "관리자 비밀번호가 설정되지 않았습니다. 서버 .env에 ADMIN_PASSWORD를 설정하세요.")
+    user_ok = secrets.compare_digest(credentials.username, ADMIN_USER)
+    pass_ok = secrets.compare_digest(credentials.password, ADMIN_PASSWORD)
+    if not (user_ok and pass_ok):
+        raise HTTPException(401, "인증에 실패했습니다.", headers={"WWW-Authenticate": "Basic"})
+    return True
+
+
 app = FastAPI(title="청구서 자동 작성")
+feedback_store.init_db()
+submission_store.init_db()
 
 
 @app.middleware("http")
@@ -62,7 +87,7 @@ async def no_cache_static(request, call_next):
     """정적 파일(html/js/css)을 브라우저가 캐시해 옛 버전을 쓰는 문제 방지."""
     resp = await call_next(request)
     path = request.url.path
-    if path == "/" or path.endswith((".html", ".js", ".css")):
+    if path == "/" or path.endswith((".html", ".js", ".css", ".ico")):
         resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     return resp
 
@@ -201,17 +226,22 @@ async def expense_options(template: UploadFile = File(None)):
     name = (template.filename if template
             else os.path.basename(DEFAULT_EXPENSE_TPL))
     if tpl is None:
-        return {"purpose": [], "payment": [], "limits": {},
-                "template_name": None, "is_default": True}
+        return {"purpose": [], "payment": [], "limits": {}, "meal": [],
+                "note_examples": {}, "template_name": None, "is_default": True}
     try:
         opts = get_dropdown_options(tpl)
         limits = get_support_limits(tpl)
+        note_examples = get_note_examples(tpl)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(500, f"양식을 읽지 못했습니다: {e}")
     return {
         "purpose": opts.get("purpose", []),
         "payment": opts.get("payment", []),
         "limits": limits,
+        # 참여자 필수(식대) 목적 — 프론트에서 성명 자동 채움에 사용
+        "meal": sorted(MEAL_PURPOSES),
+        # 목적별 비고작성예시 — 프론트에서 비고칸 placeholder(얕은 글씨)로 사용
+        "note_examples": note_examples,
         "template_name": name,
         "is_default": template is None,
     }
@@ -254,60 +284,124 @@ async def expense_analyze(
     return {"rows": rows}
 
 
-@app.post("/api/expense/generate")
-async def expense_generate(
-    payload: str = Form(...),
-    template: UploadFile = File(None),
-):
-    """편집된 행으로 비용청구서(.xlsm)를 채워 다운로드로 반환한다.
-    payload(JSON): {rows:[...], basic:{dept,name,title}, welfare_budget:int}
+def _prepare_expense(data, tpl):
+    """payload 를 파싱해 (rows, basic, records, norm, limits) 로 정규화한다.
+    records: 작성시트 기입용(키 claim_amount).  norm: 검증·비용청구서용(키 claim).
+    청구금액은 복지비면 배분, 아니면 목적 한도로 캡한 값을 양쪽에 동일 적용한다.
     """
-    data = json.loads(payload)
-    rows = data.get("rows", [])
+    rows = [r for r in data.get("rows", []) if (r.get("store") or r.get("date"))]
     basic = data.get("basic", {})
     welfare_budget = _to_int(data.get("welfare_budget")) or 0
-
-    tpl = _template_bytes(await template.read() if template else None,
-                          DEFAULT_EXPENSE_TPL)
-    if tpl is None:
-        raise HTTPException(400, "양식을 찾지 못했습니다.")
-
     try:
         limits = get_support_limits(tpl)
     except Exception:  # noqa: BLE001
         limits = {}
-
-    # 비어 있지 않은 행만
-    rows = [r for r in rows if (r.get("store") or r.get("date"))]
-    if not rows:
-        raise HTTPException(400, "채울 데이터가 없습니다.")
-
     alloc = _welfare_alloc(rows, welfare_budget) if welfare_budget else None
-    records = []
+    records, norm = [], []
     for i, r in enumerate(rows):
         claim = (alloc[i] if welfare_budget
                  else _capped_claim(r.get("purpose"), r.get("claim"),
                                     r.get("amount"), limits))
+        participants = (r.get("participants") or "").strip()
         records.append({
             "date": r.get("date"), "store": r.get("store"),
             "purpose": r.get("purpose"), "amount": _to_int(r.get("amount")),
             "payment": r.get("payment"), "time": r.get("time"),
             "claim_amount": claim, "region": r.get("region"),
-            "participants": basic.get("name", ""), "note": r.get("note"),
+            "participants": participants, "note": r.get("note"),
         })
-    try:
-        buf, _start, n = fill_workbook(
-            tpl, records, append=False,
-            basic_info={"dept": basic.get("dept"), "name": basic.get("name"),
-                        "title": basic.get("title")},
-        )
-    except Exception as e:  # noqa: BLE001
-        raise HTTPException(500, f"생성 실패: {e}")
+        norm.append({
+            "date": r.get("date"), "store": r.get("store"),
+            "purpose": r.get("purpose"), "amount": _to_int(r.get("amount")),
+            "payment": r.get("payment"), "claim": claim,
+            "participants": participants, "time": r.get("time"),
+            "region": r.get("region"), "note": r.get("note"),
+        })
+    return rows, basic, records, norm, limits
 
+
+@app.post("/api/expense/review")
+async def expense_review(
+    payload: str = Form(...),
+    template: UploadFile = File(None),
+):
+    """'매크로검토' 대체 — 검증 결과와 정렬·매핑된 미리보기를 반환(파일 생성 없음).
+    반환: {ok, issues:[{row,field,code,message}], preview:[...], count, over_limit, year}
+    """
+    data = json.loads(payload)
+    tpl = _template_bytes(await template.read() if template else None,
+                          DEFAULT_EXPENSE_TPL)
+    if tpl is None:
+        raise HTTPException(400, "양식을 찾지 못했습니다.")
+    rows, basic, records, norm, limits = _prepare_expense(data, tpl)
+    if not rows:
+        raise HTTPException(400, "검토할 데이터가 없습니다.")
+
+    year = datetime.now().year
+    issues = validate_claims(norm, limits, year=year)
+    ordered = sort_for_claim(norm)
+    preview = [{
+        "date": (_to_date(r["date"]).isoformat() if _to_date(r["date"])
+                 else (r["date"] or "")),
+        "store": r["store"] or "", "purpose": r["purpose"] or "",
+        "participants": r["participants"] or "", "note": r["note"] or "",
+        "payment": r["payment"] or "", "amount": r["amount"], "claim": r["claim"],
+        "time": r["time"] or "", "region": r["region"] or "",
+    } for r in ordered]
+    return {"ok": (not issues) and len(norm) <= 25, "issues": issues,
+            "preview": preview, "count": len(norm),
+            "over_limit": len(norm) > 25, "year": year}
+
+
+@app.post("/api/expense/generate")
+async def expense_generate(
+    payload: str = Form(...),
+    template: UploadFile = File(None),
+):
+    """검토를 통과한 데이터로 비용청구서를 생성해 다운로드로 반환한다. 형식 선택:
+      fmt="xlsx"(기본) — 매크로 '비용청구서생성'처럼 완성된 비용청구서(+교통비상세) 독립 .xlsx
+      fmt="xlsm"       — 작성시트를 채운 원본 양식 .xlsm(매크로 포함, Excel에서 직접 매크로 실행)
+    payload(JSON): {rows:[...], basic:{dept,name,title,card}, welfare_budget:int, fmt:str}
+    """
+    data = json.loads(payload)
+    fmt = (data.get("fmt") or "xlsx").lower()
+    tpl = _template_bytes(await template.read() if template else None,
+                          DEFAULT_EXPENSE_TPL)
+    if tpl is None:
+        raise HTTPException(400, "양식을 찾지 못했습니다.")
+    rows, basic, records, norm, limits = _prepare_expense(data, tpl)
+    if not rows:
+        raise HTTPException(400, "채울 데이터가 없습니다.")
+
+    # 서버측 재검증(방어) — 통과해야만 생성
+    issues = validate_claims(norm, limits, year=datetime.now().year)
+    if issues:
+        raise HTTPException(400, detail={"message": "검토를 통과하지 못했습니다.",
+                                         "issues": issues})
+    basic_info = {"dept": basic.get("dept"), "name": basic.get("name"),
+                  "title": basic.get("title"), "card": basic.get("card")}
     stamp = datetime.now().strftime("%Y%m%d_%H%M")
     who = (basic.get("name") or "").strip() or "작성완료"
-    fname = f"비용청구양식_{who}_{stamp}.xlsm"
-    return _download(buf.getvalue(), fname, XLSM_MIME, count=n)
+    try:
+        if fmt == "xlsm":
+            # 작성시트를 채운 원본 양식(.xlsm) — 사용자가 Excel에서 매크로를 직접 실행하는 버전
+            buf, _start, n = fill_workbook(tpl, records, append=False,
+                                           basic_info=basic_info)
+            return _download(buf.getvalue(), f"비용청구양식_{who}_{stamp}.xlsm",
+                             XLSM_MIME, count=n)
+        buf, n = build_claim_xlsx(tpl, sort_for_claim(norm), basic_info=basic_info)
+        fname = f"비용청구서_{who}_{stamp}.xlsx"
+        # '제출용' 다운로드 = 실제 제출 행위로 간주해 경영지원팀 관리자 페이지에 기록한다.
+        total_claim = sum(int(r["claim"] or 0) for r in norm)
+        submission_store.add_submission(
+            dept=basic.get("dept"), name=basic.get("name"), title=basic.get("title"),
+            count=n, total_claim=total_claim, filename=fname,
+        )
+        return _download(buf.getvalue(), fname, XLSX_MIME, count=n)
+    except ValueError as e:  # 25건 초과 등
+        raise HTTPException(400, str(e))
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(500, f"생성 실패: {e}")
 
 
 # ======================================================================
@@ -328,6 +422,7 @@ async def overtime_parse(attendance: UploadFile = File(...)):
         "work_end": _sec_to_hhmm(r["clock_out"]),              # 근무종료 = 퇴근
         "approved_ot": _sec_to_hhmm(r["approved_ot"]),
         "payoff": "X", "hours": "", "note": "",   # 기본: 대체휴무 미지급
+        "exclude": "", "exclude_reason": "",      # 제외할 시간 / 제외 사유
     } for r in records]
     return {"name": name, "year": year, "month": month, "rows": rows}
 
@@ -362,6 +457,76 @@ async def overtime_generate(
 
 
 # ======================================================================
+# 문의/이슈 API
+# ======================================================================
+@app.post("/api/feedback")
+async def submit_feedback(
+    title: str = Form(...),
+    content: str = Form(...),
+    screenshot: UploadFile = File(None),
+):
+    title, content = title.strip(), content.strip()
+    if not title or not content:
+        raise HTTPException(400, "제목과 내용을 입력해 주세요.")
+    shot_bytes = await screenshot.read() if screenshot else None
+    shot_mime = screenshot.content_type if screenshot else None
+    fid = feedback_store.add_feedback(title, content, shot_bytes, shot_mime)
+    return {"ok": True, "id": fid}
+
+
+@app.get("/api/feedback")
+def list_feedback_api(_: bool = Depends(require_admin)):
+    return {"items": feedback_store.list_feedback()}
+
+
+@app.get("/api/feedback/{fid}/screenshot")
+def feedback_screenshot(fid: int, _: bool = Depends(require_admin)):
+    data, mime = feedback_store.get_screenshot(fid)
+    if data is None:
+        raise HTTPException(404, "첨부된 스크린샷이 없습니다.")
+    return StreamingResponse(io.BytesIO(data), media_type=mime or "image/png")
+
+
+@app.post("/api/feedback/{fid}/status")
+async def update_feedback_status(fid: int, status: str = Form(...),
+                                 _: bool = Depends(require_admin)):
+    if status not in ("open", "done"):
+        raise HTTPException(400, "status는 open/done 이어야 합니다.")
+    feedback_store.set_status(fid, status)
+    return {"ok": True}
+
+
+@app.delete("/api/feedback/{fid}")
+def delete_feedback_api(fid: int, _: bool = Depends(require_admin)):
+    feedback_store.delete_feedback(fid)
+    return {"ok": True}
+
+
+# ======================================================================
+# 청구서 제출내역 API (경영지원팀 전용)
+# ======================================================================
+@app.get("/api/submissions")
+def list_submissions_api(_: bool = Depends(require_admin)):
+    return {"items": submission_store.list_submissions()}
+
+
+@app.post("/api/submissions/{sid}/status")
+async def update_submission_status(sid: int, status: str = Form(...),
+                                   note: str = Form(""),
+                                   _: bool = Depends(require_admin)):
+    if status not in submission_store.STATUSES:
+        raise HTTPException(400, f"status는 {submission_store.STATUSES} 중 하나여야 합니다.")
+    submission_store.set_status(sid, status, note.strip())
+    return {"ok": True}
+
+
+@app.delete("/api/submissions/{sid}")
+def delete_submission_api(sid: int, _: bool = Depends(require_admin)):
+    submission_store.delete_submission(sid)
+    return {"ok": True}
+
+
+# ======================================================================
 # 헬퍼 / 정적 파일
 # ======================================================================
 def _sec_to_hhmm(sec):
@@ -386,6 +551,16 @@ def _download(data: bytes, filename: str, mime: str, count=None):
 @app.get("/")
 def index():
     return FileResponse(os.path.join(STATIC_DIR, "index.html"))
+
+
+@app.get("/admin_feedback.html")
+def admin_feedback_page(_: bool = Depends(require_admin)):
+    return FileResponse(os.path.join(STATIC_DIR, "admin_feedback.html"))
+
+
+@app.get("/admin_submissions.html")
+def admin_submissions_page(_: bool = Depends(require_admin)):
+    return FileResponse(os.path.join(STATIC_DIR, "admin_submissions.html"))
 
 
 app.mount("/", StaticFiles(directory=STATIC_DIR), name="static")

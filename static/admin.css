@@ -1,0 +1,44 @@
+.wrap{max-width:820px;}
+.hero h1{margin-bottom:14px;}
+.admin-nav{display:flex; gap:8px; margin:0 0 20px;}
+.admin-nav a{font-size:13px; font-weight:500; color:var(--muted); text-decoration:none;
+  padding:7px 14px; border-radius:999px; border:1px solid var(--line2);}
+.admin-nav a.on{color:var(--blue-dark); border-color:#c7dcfa; background:#eef4fe;}
+.admin-nav a:hover{color:var(--blue-dark); border-color:var(--blue);}
+
+.fb-item{position:relative; background:var(--card); border:1px solid #eef1f4; border-radius:14px; padding:18px 20px; margin-bottom:14px;
+  box-shadow:0 1px 3px rgba(20,40,80,.05), 0 8px 20px rgba(20,40,80,.04);}
+.fb-top{display:flex; align-items:center; gap:10px; margin-bottom:8px;}
+.fb-title{font-size:15px; font-weight:600; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.fb-badge{flex:none; font-size:11.5px; font-weight:600; padding:3px 10px; border-radius:999px;}
+.kebab-btn{flex:none; width:26px; height:26px; border:none; background:none; border-radius:6px;
+  font-size:16px; line-height:1; color:var(--muted); cursor:pointer; display:flex; align-items:center; justify-content:center;}
+.kebab-btn:hover{background:#f1f3f6; color:var(--ink);}
+.kebab-menu{position:absolute; top:46px; right:18px; background:#fff; border:1px solid var(--line2);
+  border-radius:8px; box-shadow:0 4px 16px rgba(20,40,80,.14); overflow:hidden; z-index:10; min-width:88px;}
+.kebab-menu button{display:block; width:100%; text-align:left; padding:9px 14px; border:none; background:none;
+  font-size:12.5px; color:var(--danger); cursor:pointer;}
+.kebab-menu button:hover{background:#fdecec;}
+.fb-badge.open{background:#fff7e6; color:#92690e;}
+.fb-badge.done{background:var(--green-bg); color:var(--green-ink);}
+.fb-meta{font-size:12px; color:var(--muted); margin-bottom:10px;}
+.fb-content{font-size:13.5px; color:#3f4956; line-height:1.6; white-space:pre-wrap; margin:0 0 10px;}
+.fb-shot{max-width:220px; max-height:140px; border:1px solid var(--line); border-radius:8px; cursor:zoom-in; display:block; margin-bottom:10px;}
+.fb-toggle{border:1px solid var(--line2); background:#fff; border-radius:8px; padding:6px 14px;
+  font-size:12.5px; font-weight:500; color:#5e6b7b; cursor:pointer;}
+.fb-toggle:hover{border-color:var(--blue); color:var(--blue-dark);}
+.fb-empty{color:var(--muted); font-size:13.5px; padding:30px 0; text-align:center;}
+
+/* 청구서 제출내역 상태 배지 */
+.fb-badge.st-received{background:#eef2f7; color:#4a5562;}
+.fb-badge.st-reviewing{background:#fff7e6; color:#92690e;}
+.fb-badge.st-approved{background:var(--green-bg); color:var(--green-ink);}
+.fb-badge.st-rejected{background:#fdecec; color:var(--danger);}
+.fb-badge.st-paid{background:#e8f0fe; color:var(--blue-dark);}
+
+.sub-row{display:flex; gap:8px; flex-wrap:wrap; align-items:center;}
+.sub-row select{width:auto; height:34px; font-size:12.5px; padding:0 8px;}
+.sub-row input[type=text]{flex:1; min-width:140px; height:34px; font-size:12.5px; padding:0 10px;}
+.sub-row button{flex:none; height:34px; border:1px solid var(--line2); background:#fff; border-radius:8px;
+  padding:0 14px; font-size:12.5px; font-weight:500; color:#5e6b7b; cursor:pointer;}
+.sub-row button:hover{border-color:var(--blue); color:var(--blue-dark);}

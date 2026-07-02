@@ -1,5 +1,5 @@
 // ===== 상태 =====
-let OPTIONS = { purpose: [], payment: [], limits: {} };
+let OPTIONS = { purpose: [], payment: [], limits: {}, meal: [], note_examples: {} };
 let CONFIG = { expense_template: "비용청구양식.xlsm", overtime_template: "연장근무(수당)신청서_양식.xlsx" };
 let rcptFiles = [];           // File[]
 let analyzedNames = new Set();
@@ -121,11 +121,11 @@ function updateAiStatus() {
   const st = $("aiStatus"), sub = $("aiStatusSub"), reset = $("aiResetTop");
   if (AI.mode === "openai") {
     st.textContent = `✓ OpenAI · ${oaLabel(AI.oaModel)} 사용 중`;
-    sub.textContent = "해당 모델로 영수증을 분석합니다. \nAPI Key를 입력하세요.";
+    sub.textContent = "모델 선택 및 API Key를 입력하세요.";
     reset.classList.remove("hidden");
   } else if (AI.mode === "custom") {
     st.textContent = `✓ 직접 연결 · ${AI.cuModel || "모델명 미입력"} 사용 중`;
-    sub.textContent = "필요한 정보를 입력하세요.";
+    sub.textContent = "서버 정보를 입력하세요.";
     reset.classList.remove("hidden");
   } else {
     st.textContent = "✓ 사내 AI 모델 연결됨";
@@ -244,6 +244,7 @@ async function analyze() {
     data.rows.forEach((r) => rcptRows.push(r));
     pending.forEach((f) => analyzedNames.add(f.name));
     rcptRows.forEach((r) => { r.date = fmtDateInput(r.date); r.time = fmtTimeInput(r.time); });  // 분석값도 YYYY.MM.DD·HH:MM로 표기 통일
+    rcptRows.forEach(autofillParticipant);  // 식대 목적이면 참여자를 성명으로 자동 채움
     rcptRows.sort((a, b) => dateKey(a.date).localeCompare(dateKey(b.date)));
     recomputeClaims();   // 분석 직후에도 현재 모드 기준으로 청구금액 자동값을 채움
     renderReview();
@@ -310,7 +311,7 @@ function renderReview() {
     ? "복지비는 한도까지 영수일자 순으로 청구금액이 자동 배분돼요. 목적/거래처 등은 수정 가능."
     : "추출된 내역으로 양식을 작성합니다. 목적 선택에 따라 청구금액이 목적별 한도로 자동 조정돼요.";
   $("bulkPays").innerHTML = OPTIONS.payment.map((p) => `<button class="${lastBulk.payment === p ? "on" : ""}" onclick="bulkApply('payment','${esc(p)}')">${esc(p)}</button>`).join("");
-  const head = `<tr><th>#</th><th>영수일자</th><th>거래처명</th><th>목적</th><th>영수금액</th><th>청구금액(자동)</th><th>결제방식</th><th>영수시간</th><th>지역</th><th>비고</th><th></th></tr>`;
+  const head = `<tr><th>#</th><th>영수일자</th><th>거래처명</th><th>목적</th><th>참여자</th><th>영수금액</th><th>청구금액(자동)</th><th>결제방식</th><th>영수시간</th><th>지역</th><th>비고</th><th></th></tr>`;
   let capped = 0;  // 비용 모드에서 목적 한도로 깎인 건수(안내용)
   const rowsHtml = rcptRows.map((r, i) => {
     // 청구금액은 모드와 무관하게 동일한 입력박스로 통일 — 자동값(r.claim)이 채워지지만 직접 수정도 가능.
@@ -320,17 +321,18 @@ function renderReview() {
     return `<tr class="drow"><td>${i + 1}</td>
       <td><input type="text" data-cell="${i}:date" value="${esc(r.date)}" title="${esc(r.date)}" placeholder="YYYY.MM.DD" oninput="updDate(${i},this)"/></td>
       <td><input type="text" data-cell="${i}:store" value="${esc(r.store)}" title="${esc(r.store)}" oninput="upd(${i},'store',this.value)"/></td>
-      <td><select title="${esc(r.purpose)}" onchange="upd(${i},'purpose',this.value)">${optTags(OPTIONS.purpose, r.purpose)}</select></td>
+      <td><select data-cell="${i}:purpose" title="${esc(r.purpose)}" onchange="upd(${i},'purpose',this.value)">${optTags(OPTIONS.purpose, r.purpose)}</select></td>
+      <td><input type="text" data-cell="${i}:participants" value="${esc(r.participants)}" title="${esc(r.participants)}" placeholder="예: 홍길동, 김철수" oninput="upd(${i},'participants',this.value)"/></td>
       <td class="num"><input type="text" data-cell="${i}:amount" value="${esc(r.amount)}" oninput="upd(${i},'amount',this.value)"/></td>
       <td class="num">${claimCell}</td>
-      <td><select onchange="upd(${i},'payment',this.value)">${optTags(OPTIONS.payment, r.payment)}</select></td>
+      <td><select data-cell="${i}:payment" onchange="upd(${i},'payment',this.value)">${optTags(OPTIONS.payment, r.payment)}</select></td>
       <td><input type="text" data-cell="${i}:time" value="${esc(r.time)}" placeholder="HH:MM" oninput="updTime(${i},this)"/></td>
       <td><input type="text" data-cell="${i}:region" value="${esc(r.region)}" title="${esc(r.region)}" oninput="upd(${i},'region',this.value)"/></td>
-      <td><input type="text" data-cell="${i}:note" value="${esc(r.note)}" title="${esc(r.note)}" oninput="upd(${i},'note',this.value)"/></td>
+      <td><input type="text" data-cell="${i}:note" value="${esc(r.note)}" title="${esc(r.note)}" placeholder="${esc(noteExample(r.purpose))}" oninput="upd(${i},'note',this.value)"/></td>
       <td class="rowact"><button class="x" title="이 행 삭제" onclick="delRow(${i})">✕</button></td></tr>`;
   });
   // 행 사이(및 맨 위)에 '여기에 추가' 어포던스 — 평소엔 빈 줄, hover 시 연한 파란 선 + 왼쪽 끝 '+' 노출. 줄 전체 클릭 가능.
-  const insAfford = (i) => `<tr class="insrow" onclick="insertRow(${i})" title="여기에 행 추가"><td colspan="11"><span class="insbtn"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span></td></tr>`;
+  const insAfford = (i) => `<tr class="insrow" onclick="insertRow(${i})" title="여기에 행 추가"><td colspan="12"><span class="insbtn"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span></td></tr>`;
   const body = insAfford(-1) + rowsHtml.map((h, i) => h + insAfford(i)).join("");
   $("rcptTable").innerHTML = head + body;
   // 재렌더 전에 포커스가 있던 셀로 다시 포커스를 옮기고 커서 위치도 복원한다.
@@ -346,8 +348,29 @@ function renderReview() {
   } else if (capped) { note($("welfarePreview"), "info", `${capped}건이 목적별 한도로 자동 적용됐어요. 필요하면 청구금액을 직접 수정할 수 있어요.`); }
   else { $("welfarePreview").innerHTML = ""; }
 }
+// 데이터가 바뀌면 이전 '매크로 검토' 결과를 무효화한다(매크로 '내역수정'처럼 재검토 필요).
+function markReviewDirty() {
+  const ga = $("genArea"); if (ga) ga.classList.add("hidden");  // 검토 통과 전까지 다운로드 버튼 숨김
+  const rr = $("reviewResult"); if (rr) rr.innerHTML = "";
+  const cp = $("claimPreview"); if (cp) cp.innerHTML = "";
+  document.querySelectorAll("#rcptTable .cell-error").forEach((e) => e.classList.remove("cell-error"));
+}
+// 참여자 필수(식대) 목적인지 — 서버가 내려준 목록(OPTIONS.meal) 기준.
+function isMealPurpose(p) { return (OPTIONS.meal || []).includes(String(p || "").trim()); }
+// 목적별 비고작성예시 — 비고칸 placeholder(얕은 글씨)로 안내.
+function noteExample(p) { return (OPTIONS.note_examples || {})[String(p || "").trim()] || ""; }
+// 식대 목적인데 참여자가 비어 있으면 기초정보 성명으로 자동 채운다.
+function autofillParticipant(r) {
+  if (isMealPurpose(r.purpose) && !String(r.participants || "").trim()) {
+    const nm = ($("name").value || "").trim();
+    if (nm) { r.participants = nm; return true; }
+  }
+  return false;
+}
 function upd(i, key, val) {
+  markReviewDirty();
   rcptRows[i][key] = val;
+  if (key === "purpose") autofillParticipant(rcptRows[i]);  // 식대로 바꾸면 성명 자동 채움
   if (isWelfare()) {
     // 복지비: 금액·날짜가 바뀌면 영수일자 순 자동 배분을 다시 계산한다.
     if (key === "amount" || key === "date") recomputeWelfare();
@@ -359,52 +382,131 @@ function upd(i, key, val) {
 }
 // 영수일자: 숫자만 쳐도 YYYY.MM.DD로 자동 정리. 복지비는 일자순 배분이라 재계산이 필요.
 function updDate(i, el) {
+  markReviewDirty();
   const f = fmtDateInput(el.value);
   el.value = f; rcptRows[i].date = f;
   if (isWelfare()) { recomputeWelfare(); renderReview(); }
 }
 // 영수시간: 숫자만 쳐도 HH:MM으로 자동 정리. 표 계산엔 영향 없어 재렌더하지 않음(커서 유지).
 function updTime(i, el) {
+  markReviewDirty();
   const f = fmtTimeInput(el.value);
   el.value = f; rcptRows[i].time = f;
 }
-function blankRow() { return { date: "", store: "", purpose: "", amount: "", claim: "", payment: "", time: "", region: "", note: "", filename: "", error: null }; }
-function insertRow(i) { rcptRows.splice(i + 1, 0, blankRow()); renderReview(); updateAnalyzeBtn(); }
-function delRow(i) { rcptRows.splice(i, 1); renderReview(); updateAnalyzeBtn(); }
-function addRow() { rcptRows.push(blankRow()); renderReview(); }
+function blankRow() { return { date: "", store: "", purpose: "", amount: "", claim: "", payment: "", time: "", region: "", note: "", participants: "", filename: "", error: null }; }
+function insertRow(i) { markReviewDirty(); rcptRows.splice(i + 1, 0, blankRow()); renderReview(); updateAnalyzeBtn(); }
+function delRow(i) { markReviewDirty(); rcptRows.splice(i, 1); renderReview(); updateAnalyzeBtn(); }
+function addRow() { markReviewDirty(); rcptRows.push(blankRow()); renderReview(); }
 function bulkApply(key, val) {
   if (!val) return;
+  markReviewDirty();
   lastBulk[key] = val;                              // 무엇을 적용했는지 기억 (버튼/드롭다운 표시용)
   rcptRows.forEach((r) => { r[key] = val; });
+  if (key === "purpose") rcptRows.forEach(autofillParticipant);  // 식대 일괄 적용 시 성명 자동 채움
   if (key === "purpose" && !isWelfare()) rcptRows.forEach((_, i) => autoClaimExpense(i));  // 목적 일괄 적용 시 청구금액도 한도로 재계산
   renderReview();
   // 드롭다운을 '목적 선택'으로 되돌려, 같은 목적을 다시 골라도 onchange가 발생해 재적용되게 한다.
   if (key === "purpose") $("bulkPurpose").value = "";
 }
 
-// ===== 비용청구서 생성 =====
-async function generateExpense() {
+// ===== 매크로 검토 (동작매크로_매크로검토 재구현) =====
+// 검토/수정 표를 서버로 보내 필수항목·형식·당해연도·청구≤영수·식대 1인당 한도를 검증하고,
+// 통과하면 정렬·매핑된 비용청구서 미리보기를 띄운 뒤 생성 버튼을 연다.
+async function reviewClaims() {
+  const dept = $("dept").value.trim(), name = $("name").value.trim();
+  const missing = []; if (!dept) missing.push("소속부서명"); if (!name) missing.push("성명");
+  if (missing.length) { note($("reviewResult"), "warn", `먼저 1단계 '기초정보 입력'에서 ${missing.join(" · ")}을(를) 입력해 주세요.`); return; }
+  // 검증 대상(비어있지 않은) 행 + 원래 인덱스(하이라이트 매핑용)
+  const filtered = [];
+  rcptRows.forEach((r, idx) => { if (r.store || r.date) filtered.push({ r, idx }); });
+  if (!filtered.length) { note($("reviewResult"), "warn", "검토할 데이터가 없어요. 먼저 영수증을 분석하세요."); return; }
+  const welfare = isWelfare() ? (toInt($("welfare").value) || 0) * 10000 : 0;
+  const fd = new FormData();
+  fd.append("payload", JSON.stringify({ rows: filtered.map((f) => f.r), basic: { dept, name, title }, welfare_budget: welfare }));
+  if (expenseTpl) fd.append("template", expenseTpl);
+  const btn = $("reviewBtn"); btn.disabled = true; btn.innerHTML = `<span class="spin"></span> 검토 중…`;
+  markReviewDirty();
+  try {
+    const resp = await fetch("/api/expense/review", { method: "POST", body: fd });
+    if (!resp.ok) throw new Error(await errText(resp));
+    const data = await resp.json();
+    document.querySelectorAll("#rcptTable .cell-error").forEach((e) => e.classList.remove("cell-error"));
+    (data.issues || []).forEach((it) => {
+      const f = filtered[it.row]; if (!f) return;
+      const el = document.querySelector(`#rcptTable [data-cell="${f.idx}:${it.field}"]`);
+      if (el) el.classList.add("cell-error");
+    });
+    if (data.issues && data.issues.length) {
+      const lis = data.issues.map((it) => `<li><b>${filtered[it.row] ? filtered[it.row].idx + 1 : "?"}번 행</b> — ${esc(it.message)}</li>`).join("");
+      note($("reviewResult"), "err", `<b>검토 결과 ${data.issues.length}건의 오류가 있어요.</b> 노란색으로 표시된 칸을 수정한 뒤 다시 검토하세요.<ul class="issues">${lis}</ul>`);
+    } else if (data.over_limit) {
+      note($("reviewResult"), "warn", `청구내역이 ${data.count}건으로 양식 최대 25건을 초과했어요. 25건 이하로 나눠 진행해 주세요.`);
+    } else {
+      note($("reviewResult"), "info", `<b>✅ 검토 통과 (${data.count}건)</b> — 아래 미리보기를 확인하고 생성하세요.`);
+      renderClaimPreview(data.preview);
+      updateCardInput();
+      $("genArea").classList.remove("hidden");  // 검토 통과 → 다운로드 버튼 노출
+    }
+  } catch (e) { note($("reviewResult"), "err", "검토 실패: " + e.message); }
+  finally { btn.disabled = false; btn.innerHTML = "매크로 검토"; }
+}
+
+// 정렬·매핑된 최종 비용청구서 미리보기 표를 그린다.
+function renderClaimPreview(preview) {
+  const cp = $("claimPreview");
+  if (!cp) return;
+  if (!preview || !preview.length) { cp.innerHTML = ""; return; }
+  const won = (v) => (v == null || v === "") ? "" : Number(v).toLocaleString();
+  const body = preview.map((r, i) => `<tr>
+    <td>${i + 1}</td><td>${esc(r.date)}</td><td>${esc(r.store)}</td><td>${esc(r.purpose)}</td>
+    <td>${esc(r.participants)}</td><td>${esc(r.note)}</td><td>${esc(r.payment)}</td>
+    <td class="num">${won(r.amount)}</td><td class="num">${won(r.claim)}</td>
+    <td>${esc(r.time)}</td><td>${esc(r.region)}</td></tr>`).join("");
+  cp.innerHTML = `<div class="preview-title">📄 비용청구서 미리보기 <span class="muted">(결제방식·영수일자 순 정렬)</span></div>
+    <div class="tbl-wrap"><table class="grid preview"><tr><th>#</th><th>영수일자</th><th>거래처명</th><th>목적</th><th>참여자</th><th>비고</th><th>결제방식</th><th>영수금액</th><th>청구금액</th><th>시간</th><th>지역</th></tr>${body}</table></div>`;
+}
+
+// 개인형법인카드 결제 행이 있으면 법인카드 뒷4자리 입력을 노출(매크로 서명 단계 대체).
+function updateCardInput() {
+  const has = rcptRows.some((r) => String(r.payment || "").includes("개인형법인카드"));
+  const wrap = $("cardLast4Wrap");
+  if (wrap) wrap.classList.toggle("hidden", !has);
+}
+
+// ===== 비용청구서 생성 (형식 선택: xlsx 완성본 / xlsm 양식파일) =====
+const GEN_LABELS = { xlsx: "제출용 청구서 다운로드 (.xlsx)", xlsm: "양식 파일 다운로드 (.xlsm)" };
+async function generateExpense(fmt) {
+  fmt = fmt === "xlsm" ? "xlsm" : "xlsx";
   const dept = $("dept").value.trim(), name = $("name").value.trim();
   const missing = []; if (!dept) missing.push("소속부서명"); if (!name) missing.push("성명");
   if (missing.length) { note($("genNote"), "warn", `먼저 1단계 '기초정보 입력'에서 ${missing.join(" · ")}을(를) 입력해 주세요.`); return; }
   const rows = rcptRows.filter((r) => r.store || r.date);
   if (!rows.length) { note($("genNote"), "warn", "채울 데이터가 없어요. 먼저 영수증을 분석하세요."); return; }
   const welfare = isWelfare() ? (toInt($("welfare").value) || 0) * 10000 : 0;
+  const card = ($("cardLast4") && $("cardLast4").value.trim()) || "";
   const fd = new FormData();
-  fd.append("payload", JSON.stringify({ rows, basic: { dept, name, title }, welfare_budget: welfare }));
+  fd.append("payload", JSON.stringify({ rows, basic: { dept, name, title, card }, welfare_budget: welfare, fmt }));
   if (expenseTpl) fd.append("template", expenseTpl);
-  const btn = $("genBtn"); btn.disabled = true; btn.innerHTML = `<span class="spin"></span> 생성 중…`;
+  const btn = fmt === "xlsm" ? $("genXlsmBtn") : $("genBtn");
+  const other = fmt === "xlsm" ? $("genBtn") : $("genXlsmBtn");
+  btn.disabled = true; other.disabled = true; btn.innerHTML = `<span class="spin"></span> 생성 중…`;
   note($("genNote"), "info", "");
   try {
     const resp = await fetch("/api/expense/generate", { method: "POST", body: fd });
-    if (!resp.ok) throw new Error(await errText(resp));
-    const r = await saveToClient(resp, "비용청구양식_작성완료.xlsm");
+    if (!resp.ok) {
+      // 서버 재검증 실패(400) 등 — detail.message 우선
+      let m = "생성 실패";
+      try { const j = await resp.json(); m = (j.detail && (j.detail.message || j.detail)) || m; } catch {}
+      throw new Error(typeof m === "string" ? m : "검토를 통과하지 못했어요. 다시 검토해 주세요.");
+    }
+    const fallback = fmt === "xlsm" ? "비용청구양식_작성완료.xlsm" : "비용청구서_작성완료.xlsx";
+    const r = await saveToClient(resp, fallback);
     if (r.aborted) { note($("genNote"), "warn", "저장이 취소됐어요."); }
     else note($("genNote"), "info",
-      `<b>✅ 비용청구서가 다운로드됐어요</b><br/>${esc(r.name)} 가 내 PC에 저장됐어요.`);
+      `<b>✅ 다운로드됐어요</b><br/>${esc(r.name)} 가 내 PC에 저장됐어요.`);
     $("newWrap").classList.remove("hidden");
   } catch (e) { note($("genNote"), "err", "생성 실패: " + e.message); }
-  finally { btn.disabled = false; btn.innerHTML = "비용청구서 생성 & 다운로드"; }
+  finally { btn.disabled = false; other.disabled = false; btn.innerHTML = GEN_LABELS[fmt]; }
 }
 
 // ===== 초기화 =====
@@ -418,6 +520,7 @@ function resetAll() {
   resetBulk();
   renderRcptFiles(); renderThumbs(); renderReview(); updateAnalyzeBtn();
   note($("analyzeNote"), "", ""); note($("genNote"), "", ""); $("newWrap").classList.add("hidden");
+  markReviewDirty();
 }
 
 // ===== 클라이언트(접속한 내 PC) 다운로드 =====
@@ -475,24 +578,78 @@ function offHoursDec(s) { s = String(s || "").trim(); if (!s) return 0; if (s.in
 const fmtHalf = (v) => (Number.isInteger(v) ? String(v) : v.toFixed(1));
 // 승인초과 → 신청 시간(30분 단위 내림, 0.5 step). 대체휴무 지급(O)이면 대체휴무 시간만큼 차감.
 // 양식의 ROUNDDOWN(MAX(0,(근무시간)-Q)*2)/2 수식과 동일.
+// 신청시간 = 승인초과 기준: ROUNDDOWN(MAX(0, 승인초과 - 제외할시간 - 대체휴무)*2)/2
 function otReqHoursNum(r) {
-  const base = hmToDec(r.approved_ot);
+  const base = hmToDec(r.approved_ot);              // 승인 초과 근로시간
   if (base == null) return null;
+  const excl = offHoursDec(r.exclude);              // 제외할 시간
   const sub = String(r.payoff).toUpperCase() === "O" ? offHoursDec(r.hours) : 0;
-  return Math.floor(Math.max(0, base - sub) * 2) / 2;
+  return Math.floor(Math.max(0, base - excl - sub) * 2) / 2;
+}
+// 비고(대체휴무 사용 일시) 자동 조합: 'YYYY-MM-DD (요일) HH:MM~HH:MM'
+function composeNote(r) {
+  const d = String(r.offDate || "").trim();
+  const s = String(r.offStart || "").trim();
+  const e = String(r.offEnd || "").trim();
+  if (!d && !s && !e) return "";
+  let datePart = d;
+  const m = /(\d{4})\D(\d{1,2})\D(\d{1,2})/.exec(d);
+  if (m) {
+    const dt = new Date(+m[1], +m[2] - 1, +m[3]);
+    const w = ["일", "월", "화", "수", "목", "금", "토"][dt.getDay()];
+    datePart = `${m[1]}-${String(+m[2]).padStart(2, "0")}-${String(+m[3]).padStart(2, "0")} (${w})`;
+  }
+  const timePart = (s || e) ? `${s}~${e}` : "";
+  return [datePart, timePart].filter(Boolean).join(" ");
 }
 function otReqHours(r) { const v = otReqHoursNum(r); return v == null ? "" : fmtHalf(v); }
 function otTotalReq() { return otRows.reduce((s, r) => s + (otReqHoursNum(r) || 0), 0); }
 function refreshReq(i) { const el = $(`reqh-${i}`); if (el) el.textContent = otReqHours(otRows[i]); }
 function refreshOtTotal() { const el = $("otTotalReq"); if (el) el.textContent = fmtHalf(otTotalReq()); }
+// 행별 체크박스 토글 → 상세행 펼침/접힘 + 표 재렌더.
+// 체크 해제하면 입력값을 비워, 신청 시간이 자동으로 원래(승인초과)로 되돌아오게 한다.
+function otToggleExcl(i, on) {
+  const r = otRows[i]; r.exclOn = on;
+  if (!on) { r.exclude = ""; r.excludeReason = ""; }
+  renderAtt();
+}
+function otTogglePayoff(i, on) {
+  const r = otRows[i]; r.payoff = on ? "O" : "X";
+  if (!on) { r.hours = ""; r.offDate = ""; r.offStart = ""; r.offEnd = ""; r.note = ""; }
+  renderAtt();
+}
+
 function renderAtt() {
-  const head = `<tr><th>일자</th><th>출근</th><th>퇴근</th><th>근무 시작</th><th>근무 종료</th><th>승인초과</th><th>대체휴무</th><th>대체휴무 시간</th><th>비고</th><th>신청 시간</th></tr>`;
-  const body = otRows.map((r, i) => `<tr>
-    <td>${otDateLabel(r.day)}</td><td>${esc(r.clock_in)}</td><td>${esc(r.clock_out)}</td><td>${esc(r.work_start)}</td><td>${esc(r.work_end)}</td><td>${esc(r.approved_ot)}</td>
-    <td><select onchange="updOt(${i},'payoff',this.value)">${optTags(["X", "O"], r.payoff)}</select></td>
-    <td><input type="text" value="${esc(r.hours)}" placeholder="예: 1:00" oninput="updOt(${i},'hours',this.value)"/></td>
-    <td><input type="text" value="${esc(r.note)}" oninput="updOt(${i},'note',this.value)"/></td>
-    <td class="reqh" id="reqh-${i}">${otReqHours(r)}</td></tr>`).join("");
+  const head = `<tr><th>일자</th><th>출근</th><th>퇴근</th><th>근무 시작</th><th>근무 종료</th><th>승인초과</th>` +
+    `<th class="c">제외시간</th><th class="c">대체휴무</th><th class="c">신청 시간</th></tr>`;
+  const body = otRows.map((r, i) => {
+    const isO = String(r.payoff).toUpperCase() === "O";
+    const exOn = !!r.exclOn;
+    const main = `<tr>
+      <td>${otDateLabel(r.day)}</td><td>${esc(r.clock_in)}</td><td>${esc(r.clock_out)}</td><td>${esc(r.work_start)}</td><td>${esc(r.work_end)}</td><td>${esc(r.approved_ot)}</td>
+      <td class="c"><label class="chk"><input type="checkbox" ${exOn ? "checked" : ""} onchange="otToggleExcl(${i},this.checked)"/></label></td>
+      <td class="c"><label class="chk"><input type="checkbox" ${isO ? "checked" : ""} onchange="otTogglePayoff(${i},this.checked)"/></label></td>
+      <td class="reqh" id="reqh-${i}">${otReqHours(r)}</td></tr>`;
+    if (!exOn && !isO) return main;
+    // 상세 입력행 — 체크한 항목만 노출
+    let parts = "";
+    if (exOn) {
+      parts += `<div class="drow"><span class="badge b-ex">제외</span>
+        <div class="fg"><span class="lb">제외 시간</span><input type="text" value="${esc(r.exclude)}" placeholder="예: 0.5" style="width:70px" oninput="updOt(${i},'exclude',this.value)"/></div>
+        <div class="fg"><span class="lb">사유</span><input type="text" value="${esc(r.excludeReason)}" placeholder="예: 저녁 식사" style="width:150px" oninput="updOt(${i},'excludeReason',this.value)"/></div></div>`;
+    }
+    if (isO) {
+      parts += `<div class="drow"><span class="badge b-off">대체휴무</span>
+        <div class="fg"><span class="lb">시간</span><input type="text" value="${esc(r.hours)}" placeholder="예: 0.5" style="width:70px" oninput="updOt(${i},'hours',this.value)"/></div>
+        <div class="fg"><span class="lb">사용 일시</span>
+          <input type="text" value="${esc(r.offDate)}" placeholder="YYYY-MM-DD" style="width:118px" oninput="updOtDate(${i},this)"/>
+          <input type="text" value="${esc(r.offStart)}" placeholder="시작" style="width:52px" oninput="updOtTime(${i},'offStart',this)"/>
+          <span class="muted">~</span>
+          <input type="text" value="${esc(r.offEnd)}" placeholder="종료" style="width:52px" oninput="updOtTime(${i},'offEnd',this)"/>
+        </div></div>`;
+    }
+    return main + `<tr class="detail"><td colspan="9"><div class="dwrap">${parts}</div></td></tr>`;
+  }).join("");
   $("attTable").innerHTML = head + body;
   refreshOtTotal();
 }
@@ -506,14 +663,27 @@ function resetOvertime() {
 }
 function updOt(i, key, val) {
   otRows[i][key] = val;
-  // 대체휴무 지급/시간이 바뀌면 신청 시간과 총합을 즉시 다시 계산(표 전체 재렌더 없이).
-  if (key === "payoff" || key === "hours") { refreshReq(i); refreshOtTotal(); }
+  // 대체휴무 지급여부가 바뀌면 비고/대체휴무시간 칸 구성이 달라져 표를 다시 그린다.
+  if (key === "payoff") { renderAtt(); return; }
+  // 시간 차감에 영향 주는 값이 바뀌면 신청 시간·총합만 즉시 갱신(재렌더 없이).
+  if (key === "hours" || key === "exclude") { refreshReq(i); refreshOtTotal(); }
 }
-function otBulk(v) { otRows.forEach((r) => { r.payoff = v; }); renderAtt(); }
+// 대체휴무 사용 일시: 숫자만 쳐도 날짜(YYYY-MM-DD)·시간(HH:MM)으로 자동 정리. 재렌더 없이 커서 유지.
+function updOtDate(i, el) { const f = fmtDateInput(el.value).replace(/\./g, "-"); el.value = f; otRows[i].offDate = f; }
+function updOtTime(i, key, el) { const f = fmtTimeInput(el.value); el.value = f; otRows[i][key] = f; }
 async function generateOvertime() {
   if (!attFile) { note($("otGenNote"), "warn", "먼저 근태현황 파일을 올려주세요."); return; }
   const extras = {};
-  otRows.forEach((r) => { extras[r.day] = { payoff: r.payoff, hours: r.hours, note: r.note }; });
+  otRows.forEach((r) => {
+    const isO = String(r.payoff).toUpperCase() === "O";
+    extras[r.day] = {
+      payoff: isO ? "O" : "X",
+      hours: isO ? (r.hours || "") : "",
+      note: isO ? composeNote(r) : "",
+      exclude: r.exclOn ? (r.exclude || "") : "",
+      exclude_reason: r.exclOn ? (r.excludeReason || "") : "",
+    };
+  });
   const parts = [$("otDept").value.trim(), $("otPos").value.trim()].filter(Boolean);
   const fd = new FormData();
   fd.append("attendance", attFile);
@@ -529,6 +699,39 @@ async function generateOvertime() {
     else note($("otGenNote"), "info", `<b>✅ 신청서가 다운로드됐어요</b><br/>${esc(r.name)} 가 내 PC에 저장됐어요.`);
   } catch (e) { note($("otGenNote"), "err", "생성 실패: " + e.message); }
   finally { btn.disabled = false; btn.innerHTML = "신청서 생성 & 다운로드"; }
+}
+
+// ===== 문의/이슈 =====
+let fbShotFile = null;
+function openFeedback() {
+  $("fbTitle").value = ""; $("fbContent").value = ""; $("fbShot").value = "";
+  fbShotFile = null; $("fbShotPreview").innerHTML = ""; note($("fbNote"), "", "");
+  $("feedbackModal").classList.remove("hidden");
+}
+function closeFeedback() { $("feedbackModal").classList.add("hidden"); }
+function previewFeedbackShot(input) {
+  fbShotFile = input.files[0] || null;
+  if (!fbShotFile) { $("fbShotPreview").innerHTML = ""; return; }
+  const url = URL.createObjectURL(fbShotFile);
+  $("fbShotPreview").innerHTML = `<img src="${url}" alt="스크린샷 미리보기"/>`;
+}
+async function submitFeedback() {
+  const title = $("fbTitle").value.trim(), content = $("fbContent").value.trim();
+  if (!title || !content) { note($("fbNote"), "warn", "제목과 내용을 입력해 주세요."); return; }
+  const fd = new FormData();
+  fd.append("title", title); fd.append("content", content);
+  if (fbShotFile) fd.append("screenshot", fbShotFile);
+  const btn = $("fbSubmitBtn"); btn.disabled = true; btn.innerHTML = `<span class="spin"></span> 제출 중…`;
+  try {
+    const resp = await fetch("/api/feedback", { method: "POST", body: fd });
+    if (!resp.ok) throw new Error(await errText(resp));
+    note($("fbNote"), "info", "✅ 문의가 접수됐어요. 감사합니다!");
+    setTimeout(closeFeedback, 900);
+  } catch (e) {
+    note($("fbNote"), "err", "제출 실패: " + e.message);
+  } finally {
+    btn.disabled = false; btn.innerHTML = "제출";
+  }
 }
 
 // ===== 옵션(드롭다운) =====
@@ -556,6 +759,12 @@ async function init() {
     localStorage.setItem("howtoSeen", "1");
   }
   ["oaModel", "cuBase", "cuModel", "aiKey"].forEach((id) => $(id).addEventListener("change", saveAi));
+  // 성명을 (나중에) 입력/변경하면 식대 목적인데 비어 있는 참여자를 성명으로 채운다.
+  $("name").addEventListener("change", () => {
+    let changed = false;
+    rcptRows.forEach((r) => { if (autofillParticipant(r)) changed = true; });
+    if (changed) { markReviewDirty(); renderReview(); }
+  });
   loadAi();
   const sa = $("serverAddr"); if (sa) sa.textContent = serverAddr();  // 매크로 안내에 실제 서버 주소 표시
   try { const r = await fetch("/api/config"); if (r.ok) CONFIG = { ...CONFIG, ...(await r.json()) }; } catch {}

@@ -48,6 +48,9 @@ body{
 .sb-hint{font-size:11.5px; color:var(--muted); line-height:1.5;}
 .sb-det label.fld{font-size:12px; margin-bottom:5px;}
 .sb-det input, .sb-det select{height:36px; font-size:13px;}
+.sb-feedback-link{display:flex; align-items:center; gap:7px; margin:4px 0 0 4px;
+  font-size:12.5px; font-weight:500; color:var(--muted); cursor:pointer;}
+.sb-feedback-link:hover{color:var(--blue-dark);}
 /* display:flex(+width)로 두 버튼이 사이드바 폭을 반씩 차지 → '로컬 서버' 한 줄 유지 */
 .sb-seg{display:flex; width:100%; gap:4px; background:#e9edf3; padding:3px; border-radius:9px;}
 .sb-seg button{flex:1; border:none; background:none; padding:7px 0; border-radius:6px; font-size:12.5px; font-weight:600; color:#5e6b7b; cursor:pointer; white-space:nowrap;}
@@ -99,11 +102,15 @@ body{
 .resetlink{margin-left:auto; display:inline-flex; align-items:center; gap:4px; padding:5px 12px;
   border:1px solid var(--line2); background:#fff; border-radius:999px; font-size:12.5px; font-weight:600; color:#5e6b7b; cursor:pointer;}
 .resetlink:hover{border-color:var(--blue); color:var(--blue-dark); background:#f4f8fe;}
-/* 매크로 차단 해제 안내(생성 전) */
-.macro-guide{border-color:#f0dcae; background:#fffaf0;}
-.macro-guide summary{color:#9a6a00;}
-.macro-guide summary .ic{stroke:#d08700;}
-.macro-guide summary:hover{color:#7d5600;}
+/* 매크로 차단 해제 안내(생성 후) — 다운로드 버튼 아래 눈에 덜 띄는 텍스트 링크 */
+.macro-inline{margin-top:10px;}
+.macro-inline summary{cursor:pointer; list-style:none; display:inline-flex; align-items:center;
+  font-size:12.5px; font-weight:500; color:var(--blue-dark);}
+.macro-inline summary:hover{color:var(--blue);}
+.macro-inline summary::-webkit-details-marker{display:none;}
+.macro-inline summary::after{content:"›"; margin-left:4px; color:#8b95a1; font-size:13px; line-height:1; transition:transform .15s ease;}
+.macro-inline[open] summary::after{transform:rotate(90deg);}
+.macro-inline .howto-body{padding:8px 0 0 2px;}
 .addr{display:inline-block; margin-top:4px; background:#eef2f7; border:1px solid var(--line); border-radius:6px; padding:2px 8px; font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12.5px; color:var(--ink);}
 .copybtn{margin-left:6px; border:1px solid var(--line2); background:#fff; border-radius:6px; padding:3px 10px; font-size:12px; cursor:pointer; color:#5e6b7b;}
 .copybtn:hover{border-color:var(--blue); color:var(--blue-dark);}
@@ -114,7 +121,11 @@ input[type=text], input[type=number], input[type=password], select{
   width:100%; height:38px; padding:0 12px; border:1px solid var(--line2);
   border-radius:8px; background:#fff; color:var(--ink); font-size:14px; font-family:inherit;
 }
-input:focus, select:focus{outline:none; border-color:var(--blue); box-shadow:0 0 0 2px rgba(49,130,246,.18);}
+textarea{
+  width:100%; padding:10px 12px; border:1px solid var(--line2);
+  border-radius:8px; background:#fff; color:var(--ink); font-size:14px; font-family:inherit; resize:vertical;
+}
+input:focus, select:focus, textarea:focus{outline:none; border-color:var(--blue); box-shadow:0 0 0 2px rgba(49,130,246,.18);}
 .row{display:flex; gap:14px; flex-wrap:wrap;}
 .row > div{flex:1; min-width:160px;}
 .seg{display:inline-flex; gap:4px; background:#eaeef3; padding:4px; border-radius:10px;}
@@ -140,9 +151,9 @@ input:focus, select:focus{outline:none; border-color:var(--blue); box-shadow:0 0
 #fileGuide .ag-steps-title{display:flex; align-items:center; gap:6px; margin:0 0 12px;
   font-size:12px; font-weight:700; color:var(--blue-dark); letter-spacing:.2px;}
 #fileGuide .ag-steps-title .ic{width:15px; height:15px; stroke:var(--blue); fill:none;}
-#fileGuide .ag-step{display:flex; gap:10px; padding-left:8px; margin-bottom:10px; font-size:12.5px; color:#3f4956; line-height:1.55;}
+#fileGuide .ag-step{display:flex; gap:5px; padding-left:8px; margin-bottom:10px; font-size:11.5px; color:#3f4956; line-height:1.55;}
 #fileGuide .ag-step:last-of-type{margin-bottom:0;}
-#fileGuide .ag-step .num{flex:none; min-width:15px; color:var(--blue-dark); font-size:12.5px; font-weight:700; line-height:1.55;}
+#fileGuide .ag-step .num{flex:none; min-width:15px; color:var(--blue-dark); font-size:11.5px; font-weight:700; line-height:1.55;}
 #fileGuide .ag-step b{font-weight:600; color:var(--ink);}
 #fileGuide .ag-hint{margin-top:14px; padding-top:12px; border-top:1px solid #eef1f4;
   font-size:11.5px; color:var(--muted); line-height:1.5;}
@@ -182,24 +193,40 @@ table.grid td input, table.grid td select{height:32px; font-size:13px;}
 table.grid td.num input{text-align:right;}
 
 /* 비용청구 검토 표: 값이 잘리지 않도록 컬럼 최소 너비 지정 (필요 시 가로 스크롤) */
-#rcptTable{min-width:900px; table-layout:fixed;}
+#rcptTable{min-width:1020px; table-layout:fixed;}
 #rcptTable th{text-align:center;}
-/* 입력칸을 모두 상단 정렬: 청구금액 셀에 '한도' 배지가 붙어 셀이 길어져도
-   다른 셀 입력칸과 같은 높이에서 시작하도록(행이 위로 솟는 현상 방지). */
-#rcptTable td{vertical-align:top;}
+/* 입력칸을 세로 가운데 정렬 + 위아래 여백을 동일하게 줘 행 간격을 균일하게. */
+#rcptTable td{vertical-align:middle; padding-top:6px; padding-bottom:6px;}
 #rcptTable td input, #rcptTable td select{padding:0 8px;}
 #rcptTable th, #rcptTable td{padding-left:6px; padding-right:6px;}
 #rcptTable th:nth-child(1),  #rcptTable td:nth-child(1) {width:30px; text-align:center; color:#9aa3af;} /* # */
-#rcptTable th:nth-child(2),  #rcptTable td:nth-child(2) {width:112px;}  /* 영수일자 */
-#rcptTable th:nth-child(3),  #rcptTable td:nth-child(3) {width:120px;}  /* 거래처명 */
+#rcptTable th:nth-child(2),  #rcptTable td:nth-child(2) {width:94px;}   /* 영수일자 */
+#rcptTable th:nth-child(3),  #rcptTable td:nth-child(3) {width:118px;}  /* 거래처명 */
 #rcptTable th:nth-child(4),  #rcptTable td:nth-child(4) {width:92px;}   /* 목적 */
-#rcptTable th:nth-child(5),  #rcptTable td:nth-child(5) {width:92px;}   /* 영수금액 */
-#rcptTable th:nth-child(6),  #rcptTable td:nth-child(6) {width:98px;}   /* 청구금액 */
-#rcptTable th:nth-child(7),  #rcptTable td:nth-child(7) {width:114px;}  /* 결제방식 */
-#rcptTable th:nth-child(8),  #rcptTable td:nth-child(8) {width:78px;}   /* 영수시간 */
-#rcptTable th:nth-child(9),  #rcptTable td:nth-child(9) {width:72px;}   /* 지역 */
-#rcptTable th:nth-child(10), #rcptTable td:nth-child(10){width:96px;}   /* 비고 */
-#rcptTable th:nth-child(11), #rcptTable td:nth-child(11){width:40px;}   /* 행 삭제 */
+#rcptTable th:nth-child(5),  #rcptTable td:nth-child(5) {width:120px;}  /* 참여자 */
+#rcptTable th:nth-child(6),  #rcptTable td:nth-child(6) {width:90px;}   /* 영수금액 */
+#rcptTable th:nth-child(7),  #rcptTable td:nth-child(7) {width:96px;}   /* 청구금액 */
+#rcptTable th:nth-child(8),  #rcptTable td:nth-child(8) {width:150px;}  /* 결제방식 */
+#rcptTable th:nth-child(9),  #rcptTable td:nth-child(9) {width:76px;}   /* 영수시간 */
+#rcptTable th:nth-child(10), #rcptTable td:nth-child(10){width:70px;}   /* 지역 */
+#rcptTable th:nth-child(11), #rcptTable td:nth-child(11){width:94px;}   /* 비고 */
+#rcptTable th:nth-child(12), #rcptTable td:nth-child(12){width:40px;}   /* 행 삭제 */
+/* 매크로 검토 오류 셀 강조 (매크로 노란 음영 ColorIndex 36 대응) */
+#rcptTable .cell-error{background:#fff3c4 !important; outline:1.5px solid #f0c000; border-radius:4px;}
+/* 비용청구서 미리보기 */
+.preview-title{font-size:13px; font-weight:600; color:#333; margin:14px 0 8px;}
+#claimPreview table.grid.preview{font-size:12.5px;}
+#claimPreview table.grid.preview th{background:#eef4fe; text-align:center; white-space:nowrap;}
+#claimPreview table.grid.preview td{text-align:center; white-space:nowrap;}
+#claimPreview table.grid.preview td.num{text-align:right;}
+.note .issues{margin:8px 0 0; padding-left:18px;}
+.note .issues li{margin:2px 0;}
+/* 매크로 검토 버튼 / 미리보기 / 생성 버튼 사이 간격 */
+#reviewBtn{width:100%; margin-bottom:2px;}
+#claimPreview:not(:empty){margin-bottom:4px;}
+.gen-actions{display:flex; gap:10px; flex-wrap:wrap; margin-top:18px;}
+.gen-actions .btn{flex:1 1 220px;}
+.gen-hint{font-size:12px; line-height:1.7; margin:10px 0 0; color:var(--muted);}
 /* 행 삭제(✕) 버튼 */
 #rcptTable td.rowact{white-space:nowrap; text-align:center;}
 .rowact .x{cursor:pointer; border:none; background:none; font-size:14px; line-height:1; padding:2px 3px; color:#aab1ba;}
@@ -207,14 +234,15 @@ table.grid td.num input{text-align:right;}
 
 /* 행 사이 '여기에 추가' 어포던스 — 평소엔 빈 줄, hover 시 연한 파란 선 + 왼쪽 끝 '+' 노출. 줄 전체 클릭 가능 */
 #rcptTable tr.insrow{cursor:pointer;}
-#rcptTable tr.insrow td{width:auto !important; padding:0; border:none; height:10px; position:relative; overflow:visible;}
-#rcptTable tr.insrow .insbtn{position:absolute; left:12px; top:50%; transform:translate(-50%,-50%);
+#rcptTable tr.insrow td{width:auto !important; padding:0; border:none; height:6px; position:relative; overflow:visible;}
+/* +버튼과 hover 선을 윗행 경계선(insrow의 top) 위에 올려, 행 구분선과 겹쳐 한 줄로 보이게 한다. */
+#rcptTable tr.insrow .insbtn{position:absolute; left:12px; top:0; transform:translate(-50%,-50%);
   width:15px; height:15px; border-radius:50%; border:none; background:var(--blue);
   opacity:0; transition:opacity .12s; pointer-events:none;
   display:flex; align-items:center; justify-content:center; box-shadow:0 1px 3px rgba(49,130,246,.4); z-index:3;}
 #rcptTable tr.insrow .insbtn svg{width:9px; height:9px; stroke:#fff; stroke-width:2.6; fill:none; stroke-linecap:round; display:block;}
 #rcptTable tr.insrow:hover .insbtn{opacity:1;}
-#rcptTable tr.insrow:hover td::after{content:""; position:absolute; left:0; right:0; top:50%; height:2px; transform:translateY(-50%); background:var(--blue); opacity:.25;}
+#rcptTable tr.insrow:hover td::after{content:""; position:absolute; left:0; right:0; top:0; height:2px; transform:translateY(-50%); background:var(--blue); opacity:.9;}
 /* 표 아래 '행 추가' 버튼 — 점선 테두리의 가벼운 추가 스타일 */
 .addrow{display:inline-flex; align-items:center; gap:6px; padding:8px 18px; border:1px dashed #b7d0f7;
   background:#f7faff; color:var(--blue-dark); border-radius:9px; font-size:13px; font-weight:600; cursor:pointer; transition:.12s;}
@@ -222,6 +250,13 @@ table.grid td.num input{text-align:right;}
 .addrow .pl{display:inline-flex; align-items:center; justify-content:center; width:17px; height:17px; border-radius:50%;
   background:var(--blue); color:#fff; font-size:13px; font-weight:700; line-height:1;}
 
+/* 일괄 채우기 툴바 */
+.bulkbar{display:flex; align-items:center; gap:10px; flex-wrap:wrap; background:#f7f9fb; border:1px solid var(--line); border-radius:8px; padding:10px 12px; margin-bottom:12px;}
+.bulkbar .lbl{font-size:12px; font-weight:600; color:#555; white-space:nowrap;}
+.bulkbar select{width:auto; min-width:140px; height:34px;}
+.bulkbar .pays{display:inline-flex; gap:4px; flex-wrap:wrap;}
+.bulkbar .pays button{border:1px solid var(--line2); background:#fff; border-radius:7px; padding:6px 12px; font-size:13px; cursor:pointer;}
+.bulkbar .pays button:hover{border-color:var(--blue); color:var(--blue-dark);}
 /* 일괄 채우기: 마지막으로 적용한 결제방식 버튼 강조 */
 .bulkbar .pays button.on{background:var(--blue); color:#fff; border-color:var(--blue); font-weight:600;}
 
@@ -250,20 +285,33 @@ table.grid td.num input{text-align:right;}
 .lightbox img{max-width:94vw; max-height:90vh; border-radius:8px;}
 .lightbox .lb-x{position:absolute; top:16px; right:20px; color:#fff; font-size:16px; background:rgba(0,0,0,.55); border:1px solid rgba(255,255,255,.4); border-radius:22px; padding:8px 14px; cursor:pointer;}
 
-/* 일괄 채우기 툴바 */
-/* 연장근무(야근) 검토 표: 헤더 가운데 정렬 + 줄바꿈 방지, 시간/수치 값은 우측 정렬(가장자리에서 살짝 안쪽) */
-#attTable th{text-align:center;}
-#attTable th, #attTable td{white-space:nowrap;}
-#attTable td:nth-child(2), #attTable td:nth-child(3), #attTable td:nth-child(4),
-#attTable td:nth-child(5), #attTable td:nth-child(6){text-align:right; padding-right:22px;}
-#attTable td.reqh{text-align:right; padding-right:22px; font-weight:600; color:var(--blue-dark);}
+/* 문의/이슈 모달 */
+.modal-overlay{position:fixed; inset:0; z-index:9999; background:rgba(20,26,36,.5);
+  display:flex; align-items:center; justify-content:center; padding:20px;}
+.modal-card{background:var(--card); border-radius:14px; padding:24px 26px; width:100%; max-width:420px;
+  max-height:88vh; overflow-y:auto; box-shadow:0 12px 40px rgba(20,40,80,.22);}
+.modal-h{display:flex; align-items:center; justify-content:space-between; font-size:16px; font-weight:600;
+  margin:0 0 16px;}
+.modal-x{border:none; background:none; cursor:pointer; font-size:15px; color:var(--muted); padding:4px;}
+.modal-x:hover{color:var(--ink);}
+#fbShotPreview{margin-top:8px;}
+#fbShotPreview img{max-width:100%; max-height:160px; border-radius:8px; border:1px solid var(--line); display:block;}
 
-.bulkbar{display:flex; align-items:center; gap:10px; flex-wrap:wrap; background:#f7f9fb; border:1px solid var(--line); border-radius:8px; padding:10px 12px; margin-bottom:12px;}
-.bulkbar .lbl{font-size:12px; font-weight:600; color:#555; white-space:nowrap;}
-.bulkbar select{width:auto; min-width:140px; height:34px;}
-.bulkbar .pays{display:inline-flex; gap:4px; flex-wrap:wrap;}
-.bulkbar .pays button{border:1px solid var(--line2); background:#fff; border-radius:7px; padding:6px 12px; font-size:13px; cursor:pointer;}
-.bulkbar .pays button:hover{border-color:var(--blue); color:var(--blue-dark);}
+/* 연장근무(야근) 검토 표: 모든 값·헤더 가운데 정렬로 통일, 상세 입력행만 왼쪽 정렬 */
+#attTable th, #attTable td{text-align:center; white-space:nowrap;}
+#attTable tr.detail td{text-align:left;}
+#attTable .reqh{color:var(--blue-dark); font-weight:600;}
+#attTable .chk{display:inline-flex; align-items:center; justify-content:center; cursor:pointer;}
+#attTable .chk input{width:16px; height:16px; accent-color:var(--blue); cursor:pointer;}
+#attTable tr.detail td{background:#f4f8ff; border-bottom:1px solid #e6eefb; padding:10px 14px;}
+#attTable tr.detail .dwrap{display:flex; flex-direction:column; gap:10px; padding-left:6px;}
+#attTable tr.detail .drow{display:flex; align-items:center; gap:16px; flex-wrap:wrap;}
+#attTable tr.detail .fg{display:flex; align-items:center; gap:6px;}
+#attTable tr.detail .fg .lb{font-size:12px; font-weight:600; color:#5e6b7b; white-space:nowrap;}
+#attTable tr.detail .fg input{height:30px; border:1px solid var(--line2); border-radius:7px; padding:0 9px; font-size:12.5px; background:#fff;}
+#attTable .badge{display:inline-flex; align-items:center; font-size:11px; font-weight:600; padding:3px 9px; border-radius:20px; white-space:nowrap;}
+#attTable .badge.b-ex{background:#fff3e0; color:#b26a00;}
+#attTable .badge.b-off{background:#e8f0fe; color:var(--blue-dark);}
 
 .metrics{display:flex; gap:12px; margin-bottom:14px;}
 .metric{flex:1; background:#f7f9fb; border-radius:8px; padding:12px 14px;}

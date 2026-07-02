@@ -4,7 +4,8 @@
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>청구서 자동 작성</title>
-  <link rel="stylesheet" href="/styles.css?v=24"/>
+  <link rel="icon" href="/favicon.ico"/>
+  <link rel="stylesheet" href="/styles.css?v=31"/>
 </head>
 <body>
   <div class="wrap">
@@ -21,14 +22,14 @@
         </div>
 
         <div class="sb-card hidden" id="fileGuide">
-          <div class="sb-h"><svg class="ic" viewBox="0 0 24 24" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>근태현황 파일이란?</div>
+          <div class="sb-h"><svg class="ic" viewBox="0 0 24 24" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>근태현황이란?</div>
           <p class="ag-lead">사내 <b>그룹웨어</b>에서 매월 집계되는 개인 근태 기록입니다.</p>
           <div class="ag-steps-title"><svg class="ic" viewBox="0 0 24 24" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>근태현황 파일 받는 방법</div>
           <div class="ag-step"><span class="num">1.</span><div><b>다우오피스 접속 → 근태 메뉴</b></div></div>
           <div class="ag-step"><span class="num">2.</span><div><b>'내 근태 현황'에서 '월간' 조회</b></div></div>
           <div class="ag-step"><span class="num">3.</span><div><b>'목록 다운로드' 버튼 클릭</b></div></div>
-          <div class="ag-step"><span class="num">4.</span><div><b>홍길동_월간근태현황.xlsx 파일 생성</b></div></div>
-          <div class="ag-hint">메뉴 이름은 회사 그룹웨어마다 다를 수 있어요.</div>
+          <div class="ag-step"><span class="num">4.</span><div><b>홍길동_월간근태현황.xlsx 생성</b></div></div>
+          <div class="ag-hint">※ 사용 중인 그룹웨어에 따라 절차가 상이할 수 있습니다.</div>
         </div>
 
         <div class="sb-card" id="aiCard">
@@ -66,6 +67,8 @@
             </div>
           </details>
         </div>
+
+        <a class="sb-feedback-link" onclick="openFeedback()"><svg class="ic" viewBox="0 0 24 24" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>문의/이슈 남기기</a>
       </aside>
 
       <!-- ===== 메인 ===== -->
@@ -151,19 +154,32 @@
 
           <div class="card">
             <div class="step"><span class="num">5</span><span class="ttl">비용청구서 생성</span></div>
-            <p class="step-desc">작성한 내용으로 비용 청구서를 생성합니다.</p>
-            <details class="howto macro-guide" id="macroGuide" style="margin:0 0 16px;">
-              <summary><svg class="ic" viewBox="0 0 24 24" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>다운로드한 청구서에서 매크로가 차단되나요? — 최초 1회 설정</summary>
-              <div class="howto-body">
-                <p class="howto-lead">이 서버에서 받은 비용청구서(.xlsm)는 Windows가 외부 파일로 보고 매크로를 막을 수 있어요. 아래를 <b>PC마다 한 번만</b> 설정하면 이후엔 매크로가 바로 동작합니다.</p>
-                <div class="howto-step"><span class="num">1.</span><div>윈도우 검색 → <b>인터넷 옵션</b> 실행</div></div>
-                <div class="howto-step"><span class="num">2.</span><div><b>[보안]</b> 탭 → <b>[로컬 인트라넷]</b> 선택 → <b>[사이트] → [고급]</b></div></div>
-                <div class="howto-step"><span class="num">3.</span><div>"영역에 웹 사이트 추가"에 이 주소를 넣고 <b>추가</b>:<br/><code class="addr" id="serverAddr">…</code><button type="button" class="copybtn" onclick="copyServerAddr(this)">복사</button></div></div>
-                <div class="howto-step"><span class="num">4.</span><div>닫기 → 확인. 이후 받은 파일을 열 때 <b>[콘텐츠 사용]</b>만 누르면 됩니다.</div></div>
-                <p class="howto-hint">※ '신뢰할 수 있는 사이트'로 등록할 땐 'https 필요' 체크를 해제하세요. 서버 IP가 고정일 때 권장합니다.</p>
+            <p class="step-desc"><b>매크로 검토</b>로 필수항목·형식·당해연도·청구금액·식대 한도를 점검한 뒤, 통과하면 비용청구서 시트를 완성해 다운로드합니다.</p>
+            <div id="cardLast4Wrap" class="hidden" style="margin-bottom:12px;">
+              <label class="fld">개인형 법인카드 뒷 4자리</label>
+              <input type="text" id="cardLast4" maxlength="4" inputmode="numeric" placeholder="예: 1234" style="max-width:140px;"/>
+            </div>
+            <button class="btn ghost" id="reviewBtn" onclick="reviewClaims()">매크로 검토</button>
+            <div id="reviewResult"></div>
+            <div id="claimPreview"></div>
+            <div id="genArea" class="hidden">
+              <div class="gen-actions">
+                <button class="btn ghost" id="genXlsmBtn" onclick="generateExpense('xlsm')">양식 파일 다운로드 (.xlsm)</button>
+                <button class="btn primary" id="genBtn" onclick="generateExpense('xlsx')">제출용 청구서 다운로드 (.xlsx)</button>
               </div>
-            </details>
-            <button class="btn primary" id="genBtn" onclick="generateExpense()">비용청구서 생성 &amp; 다운로드</button>
+              <p class="gen-hint muted">· <b>제출용 청구서(.xlsx)</b>: 정렬·합계까지 끝난 최종 비용청구서(+교통비상세) — 바로 제출용<br/>· <b>양식 파일(.xlsm)</b>: 작성시트를 채운 원본 양식 — 엑셀에서 직접 매크로를 돌리는 기존 방식</p>
+              <details class="macro-inline" id="macroGuide">
+                <summary>다운로드한 청구서에서 매크로가 차단되나요? — 최초 1회 설정</summary>
+                <div class="howto-body">
+                  <p class="howto-lead">이 서버에서 받은 비용청구서(.xlsm)는 Windows가 외부 파일로 보고 매크로를 막을 수 있어요. 아래를 <b>PC마다 한 번만</b> 설정하면 이후엔 매크로가 바로 동작합니다.</p>
+                  <div class="howto-step"><span class="num">1.</span><div>윈도우 검색 → <b>인터넷 옵션</b> 실행</div></div>
+                  <div class="howto-step"><span class="num">2.</span><div><b>[보안]</b> 탭 → <b>[로컬 인트라넷]</b> 선택 → <b>[사이트] → [고급]</b></div></div>
+                  <div class="howto-step"><span class="num">3.</span><div>"영역에 웹 사이트 추가"에 이 주소를 넣고 <b>추가</b>:<br/><code class="addr" id="serverAddr">…</code><button type="button" class="copybtn" onclick="copyServerAddr(this)">복사</button></div></div>
+                  <div class="howto-step"><span class="num">4.</span><div>닫기 → 확인. 이후 받은 파일을 열 때 <b>[콘텐츠 사용]</b>만 누르면 됩니다.</div></div>
+                  <p class="howto-hint">※ '신뢰할 수 있는 사이트'로 등록할 땐 'https 필요' 체크를 해제하세요. 서버 IP가 고정일 때 권장합니다.</p>
+                </div>
+              </details>
+            </div>
             <div id="genNote"></div>
             <div id="newWrap" class="hidden" style="margin-top:10px;">
               <button class="btn ghost" onclick="resetAll()">↺ 새로 작성 (전체 초기화)</button>
@@ -173,15 +189,15 @@
 
         <!-- ============ 연장근무 ============ -->
         <section id="panel-overtime" class="hidden">
-          <div class="hero"><h1>근태현황 파일로<br/>연장근무신청서를 자동 작성하세요</h1></div>
+          <div class="hero"><h1>근태현황 파일로<br/>한 번에 연장근무신청서를 완성하세요</h1></div>
           <details class="howto" id="howtoOvertime">
             <summary><svg class="ic" viewBox="0 0 24 24" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.2 1 2h6c0-.8.4-1.5 1-2A7 7 0 0 0 12 2z"/></svg>처음이신가요? 사용 방법 보기</summary>
             <div class="howto-body">
               <p class="howto-lead">그룹웨어의 <b>월간 근태현황</b> 파일을 첨부하면, 승인된 초과근무 날을 자동으로 찾아 드려요.</p>
-              <div class="howto-step"><span class="num">1.</span><div><b>대상일 자동 탐지</b> — 승인받은 초과근무 날을 탐지해요.</div></div>
+              <div class="howto-step"><span class="num">1.</span><div><b>월간 근태 현황 파일을 업로드</b> — 승인받은 초과근무 날을 탐지해요.</div></div>
               <div class="howto-step"><span class="num">2.</span><div><b>대체휴무 반영</b> — 대체휴무로 쓴 시간은 신청 대상에서 제외해요.</div></div>
               <div class="howto-step"><span class="num">3.</span><div><b>연장근무 신청서 생성</b> — 확정된 시간으로 신청서를 생성해요.</div></div>
-              <p class="howto-hint">날짜·근무시간 열이 있는 표준 근태현황 양식이면 인식됩니다.</p>
+              <!-- <p class="howto-hint">날짜·근무시간 열이 있는 표준 근태현황 양식이면 인식됩니다.</p> -->
             </div>
           </details>
           <div style="height:18px;"></div>
@@ -203,13 +219,6 @@
             <div class="step"><span class="num">2</span><span class="ttl">연장근무 내역 검토</span><button type="button" class="resetlink" onclick="resetOvertime()">↺ 다른 파일로 다시</button></div>
             <p class="step-desc">근태현황 파일에서 자동으로 추출한 연장근무 대상일이에요. <br><b>대체휴무를 사용한 날</b>은 대체휴무를 <b>O</b>로 변경 후, 시간(예: 1.5)을 입력하세요. 입력한 만큼 신청 시간에서 자동 차감됩니다.</p>
             <div class="metrics" id="otMetrics"></div>
-            <div class="bulkbar">
-              <span class="lbl">대체휴무지급 일괄</span>
-              <span class="pays">
-                <button onclick="otBulk('X')">전체 X (기본)</button>
-                <button onclick="otBulk('O')">전체 O</button>
-              </span>
-            </div>
             <div class="row" style="margin-bottom:14px;">
               <div><label class="fld">소속</label><input type="text" id="otDept"/></div>
               <div><label class="fld">직위</label><input type="text" id="otPos"/></div>
@@ -231,6 +240,22 @@
   <div id="lightbox" class="lightbox hidden" onclick="closeLightbox()">
     <span class="lb-x">✕ 닫기</span><img id="lbImg" src="" alt=""/>
   </div>
-  <script src="/app.js?v=23"></script>
+
+  <div id="feedbackModal" class="modal-overlay hidden" onclick="if(event.target===this) closeFeedback()">
+    <div class="modal-card">
+      <div class="modal-h">문의/이슈 남기기<button type="button" class="modal-x" onclick="closeFeedback()">✕</button></div>
+      <label class="fld">제목</label>
+      <input type="text" id="fbTitle" placeholder="예: 청구금액이 자동으로 안 채워져요"/>
+      <label class="fld" style="margin-top:10px;">내용</label>
+      <textarea id="fbContent" rows="5" placeholder="어떤 화면에서 어떤 문제가 있었는지 적어주세요."></textarea>
+      <label class="fld" style="margin-top:10px;">화면 스크린샷 (선택)</label>
+      <input type="file" id="fbShot" accept="image/*" onchange="previewFeedbackShot(this)"/>
+      <div id="fbShotPreview"></div>
+      <div id="fbNote"></div>
+      <button class="btn primary" id="fbSubmitBtn" onclick="submitFeedback()" style="margin-top:14px;">제출</button>
+    </div>
+  </div>
+
+  <script src="/app.js?v=29"></script>
 </body>
 </html>

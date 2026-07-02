@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>문의/이슈 목록</title>
+  <link rel="icon" href="/favicon.ico"/>
+  <link rel="stylesheet" href="/styles.css?v=31"/>
+  <link rel="stylesheet" href="/admin.css"/>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hero"><h1>관리자 페이지</h1></div>
+    <div class="admin-nav">
+      <a class="on" href="/admin_feedback.html">문의/이슈</a>
+      <a href="/admin_submissions.html">청구서 제출내역</a>
+    </div>
+    <p class="muted" style="margin:-8px 0 20px;">사이드바 '문의/이슈 남기기'로 접수된 내용입니다.</p>
+    <div id="fbList"></div>
+  </div>
+
+  <div id="lightbox" class="lightbox hidden" onclick="this.classList.add('hidden')">
+    <span class="lb-x">✕ 닫기</span><img id="lbImg" src="" alt=""/>
+  </div>
+
+  <script src="/admin_feedback.js?v=1"></script>
+</body>
+</html>
