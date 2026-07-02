@@ -172,7 +172,7 @@ function setCompany(el) {
   company = el.value;
   markReviewDirty();   // 소속법인명이 바뀌면 파일명이 달라지므로 재검토 상태로
 }
-function setTitle(btn) {
+function setTitle(btn) {1
   document.querySelectorAll("#titleSeg button").forEach((b) => b.classList.remove("on"));
   btn.classList.add("on"); title = btn.dataset.v;
   $("welfareWrap").classList.toggle("hidden", !isWelfare());
@@ -734,7 +734,7 @@ async function generateOvertime() {
     if (r.aborted) note($("otGenNote"), "warn", "저장이 취소됐어요.");
     else note($("otGenNote"), "info", `<b>✅ 신청서가 다운로드됐어요</b><br/>${esc(r.name)} 가 내 PC에 저장됐어요.`);
   } catch (e) { note($("otGenNote"), "err", "생성 실패: " + e.message); }
-  finally { btn.disabled = false; btn.innerHTML = "신청서 생성 & 다운로드"; }
+  finally { btn.disabled = false; btn.innerHTML = "초과근무 신청서 다운로드 "; }
 }
 
 // ===== 문의/이슈 =====
