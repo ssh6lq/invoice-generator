@@ -230,8 +230,42 @@ function renderThumbs() {
     return `<div class="thumb" onclick="openLightbox('${esc(f.name)}')"><img src="${urlCache[f.name]}" alt="${esc(f.name)}"/><span class="cap">${esc(f.name)}</span></div>`;
   }).join("");
 }
-function openLightbox(name) { $("lbImg").src = urlCache[name] || ""; $("lightbox").classList.remove("hidden"); }
+function openLightbox(name) {
+  // 미리보기 토글을 켠 적이 없어 아직 URL이 없으면, 원본 파일에서 즉석으로 만든다.
+  if (!urlCache[name]) { const f = rcptFiles.find((x) => x.name === name); if (f) urlCache[name] = URL.createObjectURL(f); }
+  $("lbImg").src = urlCache[name] || ""; $("lightbox").classList.remove("hidden");
+}
 function closeLightbox() { $("lightbox").classList.add("hidden"); $("lbImg").src = ""; }
+// 검토표의 번호를 눌렀을 때: 그 행에 연결된 영수증 이미지를 라이트박스로 띄운다.
+function previewRow(i) {
+  const r = rcptRows[i];
+  if (r && r.filename && rcptFiles.some((f) => f.name === r.filename)) openLightbox(r.filename);
+}
+// ===== 행 액션 칩(커서 따라다니는 플로팅) =====
+// 번호는 표 맨 왼쪽 고정열이라 표 안에서 왼쪽으로 아이콘을 띄우면 잘린다.
+// 대신 hover한 행에서 마우스 커서 바로 아래에 칩을 띄우고 커서를 따라 이동시킨다.
+let chipRow = -1, chipHideTimer = null;
+// hover한 행 바로 아래에 칩을 고정 배치한다(커서를 따라다니지 않음 → 클릭하기 쉬움).
+// 커서가 들어온 x 근처에 두되, 다음 행 위로 살짝 겹쳐 떠서 아래로 내려 클릭할 때 다음 행이 가로채지 않게 한다.
+function showRowChip(i, tr, ev) {
+  chipRow = i;
+  cancelChipHide();
+  const chip = $("rowActChip");
+  chip.classList.remove("hidden");
+  const rb = tr.getBoundingClientRect();
+  const cw = chip.offsetWidth || 52;
+  let left = window.scrollX + (ev ? ev.clientX : rb.left + 30) - cw / 2;
+  const maxLeft = window.scrollX + document.documentElement.clientWidth - cw - 6;
+  if (left > maxLeft) left = maxLeft;
+  if (left < window.scrollX + 6) left = window.scrollX + 6;
+  chip.style.left = left + "px";
+  chip.style.top = (window.scrollY + rb.bottom - 3) + "px";   // 행 바로 아래(살짝 겹침)
+}
+function cancelChipHide() { clearTimeout(chipHideTimer); }
+function hideRowChipSoon() {
+  clearTimeout(chipHideTimer);
+  chipHideTimer = setTimeout(() => { $("rowActChip").classList.add("hidden"); chipRow = -1; }, 160);
+}
 
 // ===== 분석 =====
 async function analyze() {
@@ -287,12 +321,19 @@ async function retryFailed() {
 }
 
 // 특정 행 하나만 원본 이미지로 다시 분석한다. (목적/결제방식 등 사용자 선택은 유지)
+const reanalyzing = new Set();   // 지금 재분석 중인 행 인덱스 — 번호 자리에 스피너 표시
+function flashRow(i) {           // 완료된 행을 잠깐 파랗게 반짝여 '바뀌었다'를 알린다
+  const tr = document.querySelector(`#rcptTable tr.drow[data-row="${i}"]`);
+  if (!tr) return;
+  tr.classList.add("flash");
+  setTimeout(() => tr.classList.remove("flash"), 1100);
+}
 async function reanalyzeRow(i) {
   const r = rcptRows[i];
   const file = rcptFiles.find((f) => f.name === r.filename);
   if (!file) { note($("analyzeNote"), "warn", "이 행의 원본 이미지를 찾을 수 없어요. (2단계 목록에서 지워졌을 수 있어요)"); return; }
-  const btn = document.querySelector(`#rcptTable [data-reana="${i}"]`);
-  if (btn) { btn.disabled = true; btn.innerHTML = `<span class="spin dark"></span>`; }
+  $("rowActChip").classList.add("hidden");   // 플로팅 칩 숨김
+  reanalyzing.add(i); renderReview();        // 번호 자리에 스피너 + 행 흐리게
   const fd = new FormData(); fd.append("images", file); aiOverride(fd);
   try {
     const resp = await fetch("/api/expense/analyze", { method: "POST", body: fd });
@@ -307,11 +348,12 @@ async function reanalyzeRow(i) {
     if (isWelfare()) recomputeWelfare(); else autoClaimExpense(i);  // 청구금액 자동값 갱신
     autofillParticipant(r); autofillBizNote(r);                     // 참여자·비고 자동채움 갱신
     markReviewDirty();
-    renderReview();
+    reanalyzing.delete(i); renderReview();
+    flashRow(i);                               // 완료 표시(행 반짝)
     note($("analyzeNote"), "info", `${i + 1}번 행을 다시 분석했어요.`);
   } catch (e) {
+    reanalyzing.delete(i); renderReview();
     note($("analyzeNote"), "err", `재분석 실패: ${e.message}`);
-    renderReview();
   }
 }
 
@@ -363,9 +405,12 @@ function renderReview() {
     const lim = OPTIONS.limits[r.purpose], amt = toInt(r.amount);
     if (!welfare && lim != null && amt != null && amt > lim) capped++;
     const claimCell = `<input type="text" inputmode="numeric" data-cell="${i}:claim" value="${fmt(r.claim)}" oninput="updAmount(${i},this,'claim')"/>`;
-    const reanaBtn = (r.filename && rcptFiles.some((f) => f.name === r.filename))
-      ? `<button class="reana" data-reana="${i}" title="이 영수증 다시 분석" onclick="reanalyzeRow(${i})">↻</button>` : "";
-    return `<tr class="drow"><td class="rowfix"><span class="reslot">${reanaBtn}</span><span class="rnum">${i + 1}</span></td>
+    const hasImg = r.filename && rcptFiles.some((f) => f.name === r.filename);
+    // 이미지가 있는 행은 hover 시 번호 왼쪽(표 바깥)에 액션 칩을 띄운다.
+    const rowHover = hasImg ? ` onmouseenter="showRowChip(${i}, this, event)" onmouseleave="hideRowChipSoon()"` : "";
+    const busy = reanalyzing.has(i);
+    const numInner = busy ? `<span class="spin dark" title="다시 분석 중…"></span>` : `<span class="rnum">${i + 1}</span>`;
+    return `<tr class="drow${busy ? " analyzing" : ""}" data-row="${i}"${rowHover}><td class="rowfix">${numInner}</td>
       <td><input type="text" data-cell="${i}:date" value="${esc(r.date)}" title="${esc(r.date)}" placeholder="YYYY.MM.DD" oninput="updDate(${i},this)"/></td>
       <td><input type="text" data-cell="${i}:store" value="${esc(r.store)}" title="${esc(r.store)}" oninput="upd(${i},'store',this.value)"/></td>
       <td><select data-cell="${i}:purpose" title="${esc(r.purpose)}" onchange="upd(${i},'purpose',this.value)">${optTags(OPTIONS.purpose, r.purpose)}</select></td>
@@ -792,7 +837,7 @@ async function generateOvertime() {
     if (r.aborted) note($("otGenNote"), "warn", "저장이 취소됐어요.");
     else note($("otGenNote"), "info", `<b>✅ 신청서가 다운로드됐어요</b><br/>${esc(r.name)} 가 내 PC에 저장됐어요.`);
   } catch (e) { note($("otGenNote"), "err", "생성 실패: " + e.message); }
-  finally { btn.disabled = false; btn.innerHTML = "초과근무 신청서 다운로드 "; }
+  finally { btn.disabled = false; btn.innerHTML = "초과근무 신청서 다운로드"; }
 }
 
 // ===== 문의/이슈 =====

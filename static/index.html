@@ -80,7 +80,7 @@
 
         <!-- ============ 비용청구 ============ -->
         <section id="panel-expense">
-          <div class="hero"><h1>영수증 이미지로<br/>한 번에 비용 청구서를 완성하세요</h1></div>
+          <div class="hero"><h1>영수증 이미지로<br/>비용·복지비 청구서를 완성하세요</h1></div>
           <details class="howto" id="howtoExpense">
             <summary><svg class="ic" viewBox="0 0 24 24" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.2 1 2h6c0-.8.4-1.5 1-2A7 7 0 0 0 12 2z"/></svg>처음이신가요? 사용 방법 보기</summary>
             <div class="howto-body">
@@ -200,7 +200,7 @@
 
         <!-- ============ 초과근무 ============ -->
         <section id="panel-overtime" class="hidden">
-          <div class="hero"><h1>근태현황 파일로<br/>한 번에 초과근무신청서를 완성하세요</h1></div>
+          <div class="hero"><h1>근태현황 파일로<br/>초과근무 신청서를 완성하세요</h1></div>
           <details class="howto" id="howtoOvertime">
             <summary><svg class="ic" viewBox="0 0 24 24" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.2 1 2h6c0-.8.4-1.5 1-2A7 7 0 0 0 12 2z"/></svg>처음이신가요? 사용 방법 보기</summary>
             <div class="howto-body">
@@ -247,7 +247,7 @@
           <div class="card hidden" id="otGenCard">
             <div class="step"><span class="num">3</span><span class="ttl">초과근무신청서 생성</span></div>
             <p class="step-desc">승인된 초과 근로 시간으로 비용 청구서를 생성합니다.</p>
-            <button class="btn primary" id="otGenBtn" onclick="generateOvertime()">신청서 생성 &amp; 다운로드</button>
+            <button class="btn primary" id="otGenBtn" onclick="generateOvertime()">초과근무 신청서 다운로드</button>
             <div id="otGenNote"></div>
           </div>
         </section>
@@ -257,6 +257,12 @@
 
   <div id="lightbox" class="lightbox hidden" onclick="closeLightbox()">
     <span class="lb-x">✕ 닫기</span><img id="lbImg" src="" alt=""/>
+  </div>
+
+  <!-- 검토표 행 번호 왼쪽(표 바깥)에 hover 시 떠오르는 액션 칩 -->
+  <div id="rowActChip" class="rowchip hidden" onmouseenter="cancelChipHide()" onmouseleave="hideRowChipSoon()">
+    <button class="ract" title="영수증 미리보기" onclick="previewRow(chipRow)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.6"/><path d="M21 15l-5-5L4 21"/></svg></button>
+    <button class="ract" title="이 영수증 다시 분석" onclick="reanalyzeRow(chipRow)">↻</button>
   </div>
 
   <div id="feedbackModal" class="modal-overlay hidden" onclick="if(event.target===this) closeFeedback()">

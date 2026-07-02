@@ -215,15 +215,26 @@ table.grid td.num input{text-align:right;}
 #rcptTable th, #rcptTable td{padding-left:6px; padding-right:6px;}
 /* 맨 왼쪽 열(순번+재분석+삭제) 고정 — 가로 스크롤해도 항상 보이게. (.rowfix 로만 한정: insert 행 제외) */
 #rcptTable .rowfix{
-  width:46px; position:sticky; left:0; z-index:2; white-space:nowrap;
-  padding-left:4px; padding-right:2px;
+  width:40px; position:sticky; left:0; z-index:2; white-space:nowrap;
+  padding-left:2px; padding-right:2px;
   background:#fff; box-shadow:inset -1px 0 0 var(--line);
 }
 #rcptTable th.rowfix{background:#f7f9fb; z-index:3; text-align:center;}
-#rcptTable td.rowfix{text-align:left;}
-#rcptTable td.rowfix .reslot{display:inline-block; width:20px; text-align:center; vertical-align:middle;}
-#rcptTable td.rowfix .rnum{color:#9aa3af; font-size:12px; vertical-align:middle;}
-#rcptTable td.rowfix .reana{padding:2px 2px;}
+#rcptTable td.rowfix{text-align:center;}
+#rcptTable td.rowfix .rnum{color:#9aa3af; font-size:12px;}
+/* 재분석 중인 행은 흐리게(처리 중 표시), 완료되면 잠깐 파랗게 반짝인다 */
+#rcptTable tr.drow.analyzing td{opacity:.5;}
+@keyframes rowflash{from{background:#d9e9ff;} to{background:#fff;}}
+#rcptTable tr.drow.flash td input, #rcptTable tr.drow.flash td select{animation:rowflash 1.1s ease-out;}
+#rcptTable tr.drow.flash td.rowfix{animation:rowflash 1.1s ease-out;}
+/* 행 액션 칩 — hover 시 마우스 커서 바로 아래에 떠서 커서를 따라 이동한다 */
+.rowchip{position:absolute; display:inline-flex; gap:1px; align-items:center;
+  padding:2px 4px; background:#fff; border:1px solid var(--line); border-radius:7px;
+  box-shadow:0 2px 8px rgba(20,40,80,.16); z-index:60;}
+.rowchip .ract{cursor:pointer; border:none; background:none; padding:1px 3px; color:#8aa0bd;
+  font-size:15px; line-height:1; display:inline-flex; align-items:center;}
+.rowchip .ract:hover{color:var(--blue);}
+.rowchip .ract svg{width:15px; height:15px;}
 #rcptTable th:nth-child(2),  #rcptTable td:nth-child(2) {width:94px;}   /* 영수일자 */
 #rcptTable th:nth-child(3),  #rcptTable td:nth-child(3) {width:200px;}  /* 거래처명 */
 #rcptTable th:nth-child(4),  #rcptTable td:nth-child(4) {width:112px;}  /* 목적 */
