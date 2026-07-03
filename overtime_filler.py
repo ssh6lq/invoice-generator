@@ -228,6 +228,13 @@ def fill_overtime(template_path_or_bytes, attendance_path_or_bytes,
     # 저장돼 있던 캐시값(예: 템플릿을 마지막으로 연 날짜)을 그대로 보여준다.
     # 캐시를 생성 시점(오늘)으로 갱신해, 편집 사용 전에도 실제 작성일이 보이게 한다.
     xml = _set_formula_cache(xml, "D6", str(_date_serial(date.today())))
+    # 수행일자(C열)도 =DATE(YEAR($D$6),$C$2,$B{행}) 수식이라, 편집 사용 전에는
+    # 캐시된 옛 달(예: 2월) 날짜가 그대로 보인다. 새 달(C2)·올해(D6) 기준으로 캐시를 갱신한다.
+    # serial = (해당 월 1일 serial) + (일-1) → 엑셀 DATE의 월 넘김 규칙과 동일하게 계산됨.
+    if month:
+        base = _date_serial(date(date.today().year, int(month), 1))
+        for day in range(1, 32):        # 1일=17행, day -> 16+day (없거나 수식 아니면 자동 무시)
+            xml = _set_formula_cache(xml, f"C{16 + day}", str(base + (day - 1)))
     if dept_position:
         xml = _set_cell(xml, "D7", "str", str(dept_position).strip())
     if name:
