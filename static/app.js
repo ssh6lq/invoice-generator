@@ -714,11 +714,20 @@ function hmToDec(s) { const m = /(\d+):(\d{1,2})/.exec(String(s || "")); return 
 // 대체휴무 시간 입력 → 소수 시간. "1" / "1.5" / "1:30" 모두 허용.
 function offHoursDec(s) { s = String(s || "").trim(); if (!s) return 0; if (s.includes(":")) return hmToDec(s) || 0; const n = parseFloat(s); return isNaN(n) ? 0 : n; }
 const fmtHalf = (v) => (Number.isInteger(v) ? String(v) : v.toFixed(1));
-// 승인초과 → 신청 시간(30분 단위 내림, 0.5 step). 대체휴무 지급(O)이면 대체휴무 시간만큼 차감.
-// 양식의 ROUNDDOWN(MAX(0,(근무시간)-Q)*2)/2 수식과 동일.
-// 신청시간 = 승인초과 기준: ROUNDDOWN(MAX(0, 승인초과 - 제외할시간 - 대체휴무)*2)/2
+// 신청 시간(30분 단위 내림, 0.5 step). 대체휴무 지급(O)이면 대체휴무 시간만큼 차감.
+// 기준값(base):
+//   - 08:00 이전 조기출근: 퇴근 - 근무시작(17:00)  (근무시작 이전 시간은 연장 제외)
+//   - 그 외 출근:           승인초과 값 그대로
+// 이후 ROUNDDOWN(MAX(0, base - 제외할시간 - 대체휴무)*2)/2. overtime_filler.py 와 동일 규칙.
 function otReqHoursNum(r) {
-  const base = hmToDec(r.approved_ot);              // 승인 초과 근로시간
+  const cin = hmToDec(r.clock_in);                  // 출근시간
+  let base;
+  if (cin != null && cin < 8) {                     // 08:00 이전 조기출근
+    const ws = hmToDec(r.work_start), we = hmToDec(r.work_end);  // 근무시작(17:00)·근무종료(퇴근)
+    base = (ws != null && we != null) ? Math.max(0, we - ws) : null;
+  } else {
+    base = hmToDec(r.approved_ot);                  // 승인 초과 근로시간
+  }
   if (base == null) return null;
   const excl = offHoursDec(r.exclude);              // 제외할 시간
   const sub = String(r.payoff).toUpperCase() === "O" ? offHoursDec(r.hours) : 0;

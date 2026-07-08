@@ -6,6 +6,9 @@ overtime_filler.py
   - 포함 대상: '승인 초과 근로시간' > 0 인 날만.
   - 근무시작(I) = 출근시간 + 9시간   (표준근무 8h + 점심 1h)
                   예) 08:00 출근 -> 17:00, 09:12 출근 -> 18:12
+                  단, 08:00 이전 조기출근은 08:00부터 근무한 것으로 보아
+                  근무시작을 17:00로 노출한다. 예) 06:43 출근 -> 17:00
+                  (출근 원본값은 그대로 두고, 근무시작 기준만 08:00로 하한)
   - 근무종료(J) = 퇴근시간
   - 근무시간(K) = 양식 수식이 J-I 로 자동 계산 (0.5시간 단위)
   - 실 근무시작(L) = 근무시작(I), 실 근무종료(M) = 근무종료(J)
@@ -69,6 +72,7 @@ def _to_hours(s):
 
 FORM_SHEET = "양식"
 STANDARD_WORK_SECONDS = 9 * 3600   # 정규근무 9시간(점심 포함)
+WORK_START_FLOOR_SECONDS = 8 * 3600  # 근무시작 기준 하한: 08:00 이전 출근은 08:00부터로 본다
 DAY_SECONDS = 86400
 
 
@@ -245,12 +249,24 @@ def fill_overtime(template_path_or_bytes, attendance_path_or_bytes,
     for rec in records:
         day = rec["day"]
         r = 16 + day
-        i_sec = rec["clock_in"] + STANDARD_WORK_SECONDS   # 근무시작 = 출근+9h
+        # 근무시작(I) = 출근+9h. 단 08:00 이전 조기출근은 08:00부터 근무한 것으로 보아
+        # 근무시작을 하한 처리한다(예: 06:43 출근 -> 08:00 기준 -> 17:00). 출근 원본값은 유지.
+        eff_in = max(rec["clock_in"], WORK_START_FLOOR_SECONDS)
+        i_sec = eff_in + STANDARD_WORK_SECONDS            # 근무시작 = max(출근,08:00)+9h
         j_sec = rec["clock_out"]                          # 근무종료 = 퇴근(실제)
         ot_sec = rec.get("approved_ot", 0) or 0           # 승인 초과 근로시간
-        # 신청시간을 '승인초과 기준'으로: 실근무종료(M) = 근무시작 + 승인초과.
-        # 양식 수식 S = (M-L)*24 - N - Q = 승인초과 - 제외 - 대체휴무 가 된다.
-        m_sec = i_sec + ot_sec
+        early_in = rec["clock_in"] < WORK_START_FLOOR_SECONDS  # 08:00 이전 조기출근
+        if early_in:
+            # 조기출근: 근무시작(17:00) 이전 시간은 연장에서 제외한다.
+            # 신청 기준 = 퇴근 - 근무시작. 실근무종료(M)=퇴근으로 두면
+            # 양식 수식 S = (M-L)*24 - N - Q = (퇴근-근무시작) - 제외 - 대체휴무 가 된다.
+            claim_sec = max(0, j_sec - i_sec)
+            m_sec = j_sec
+        else:
+            # 08:00 이후 출근: 승인초과 값을 그대로 신청. 실근무종료(M)=근무시작+승인초과.
+            # 양식 수식 S = (M-L)*24 - N - Q = 승인초과 - 제외 - 대체휴무 가 된다.
+            claim_sec = ot_sec
+            m_sec = i_sec + ot_sec
         xml = _set_cell(xml, f"I{r}", "num", repr(_fraction(i_sec)))   # 근무시작(표시)
         xml = _set_cell(xml, f"J{r}", "num", repr(_fraction(j_sec)))   # 근무종료(표시=퇴근)
         xml = _set_cell(xml, f"L{r}", "num", repr(_fraction(i_sec)))   # 실 근무시작
@@ -296,8 +312,8 @@ def fill_overtime(template_path_or_bytes, attendance_path_or_bytes,
         frac = (j_sec - i_sec) / DAY_SECONDS          # K(근무시간): MOD(J-I,1) = 퇴근-근무시작
         mod1 = frac - math.floor(frac)
         k_val = math.floor(mod1 * 24 * 2 + eps) / 2   # 근무시간(0.5h 단위)
-        # S(신청시간): (M-L)*24 - N - Q = 승인초과 - 제외 - 대체휴무
-        base = max(0.0, ot_sec / 3600.0 - n_val - q_val)
+        # S(신청시간): (M-L)*24 - N - Q = (조기출근이면 퇴근-근무시작, 아니면 승인초과) - 제외 - 대체휴무
+        base = max(0.0, claim_sec / 3600.0 - n_val - q_val)
         s_val = math.floor(base * 2 + eps) / 2
         total_s += s_val
         xml = _set_formula_cache(xml, f"K{r}", _nf(k_val))

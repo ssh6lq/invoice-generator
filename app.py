@@ -19,7 +19,10 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from receipt_parser import Receipt, SYSTEM_PROMPT, _image_to_data_url
 from excel_filler import fill_workbook, get_dropdown_options, get_support_limits, _to_date
-from overtime_filler import parse_attendance, fill_overtime
+from overtime_filler import (
+    parse_attendance, fill_overtime,
+    STANDARD_WORK_SECONDS, WORK_START_FLOOR_SECONDS,
+)
 
 st.set_page_config(page_title="청구서 자동 작성", page_icon="🧾", layout="wide")
 
@@ -1318,7 +1321,7 @@ def render_overtime():
                 "일자": f"{month:02d}-{r['day']:02d}" if month else str(r["day"]),
                 "출근": _fmt(r["clock_in"]),
                 "퇴근": _fmt(r["clock_out"]),
-                "근무시작(출근+9h)": _fmt(r["clock_in"] + 9 * 3600),
+                "근무시작(출근+9h)": _fmt(max(r["clock_in"], WORK_START_FLOOR_SECONDS) + STANDARD_WORK_SECONDS),
                 "근무종료": _fmt(r["clock_out"]),
                 "승인초과": _fmt(r["approved_ot"]),
                 "대체휴무지급": default_payoff,

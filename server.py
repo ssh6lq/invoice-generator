@@ -41,7 +41,10 @@ from excel_filler import (
     validate_claims, sort_for_claim, build_claim_xlsx, get_note_examples,
     MEAL_PURPOSES,
 )
-from overtime_filler import parse_attendance, fill_overtime
+from overtime_filler import (
+    parse_attendance, fill_overtime,
+    STANDARD_WORK_SECONDS, WORK_START_FLOOR_SECONDS,
+)
 import feedback_store
 import submission_store
 
@@ -438,7 +441,8 @@ async def overtime_parse(attendance: UploadFile = File(...)):
         "day": r["day"],
         "clock_in": _sec_to_hhmm(r["clock_in"]),
         "clock_out": _sec_to_hhmm(r["clock_out"]),
-        "work_start": _sec_to_hhmm(r["clock_in"] + 9 * 3600),  # 근무시작 = 출근+9h
+        # 근무시작 = max(출근,08:00)+9h. 08:00 이전 조기출근은 08:00부터로 하한(예: 06:43 -> 17:00)
+        "work_start": _sec_to_hhmm(max(r["clock_in"], WORK_START_FLOOR_SECONDS) + STANDARD_WORK_SECONDS),
         "work_end": _sec_to_hhmm(r["clock_out"]),              # 근무종료 = 퇴근
         "approved_ot": _sec_to_hms(r["approved_ot"]),  # 초 단위까지 노출(예: 01:29:58)
         "payoff": "X", "hours": "", "note": "",   # 기본: 대체휴무 미지급
