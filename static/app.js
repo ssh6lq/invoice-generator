@@ -233,13 +233,295 @@ function renderThumbs() {
 function openLightbox(name) {
   // 미리보기 토글을 켠 적이 없어 아직 URL이 없으면, 원본 파일에서 즉석으로 만든다.
   if (!urlCache[name]) { const f = rcptFiles.find((x) => x.name === name); if (f) urlCache[name] = URL.createObjectURL(f); }
-  $("lbImg").src = urlCache[name] || ""; $("lightbox").classList.remove("hidden");
+  _lbName = name;
+  const img = $("lbImg");
+  $("lbTextLayer").innerHTML = "";
+  $("lbOcrStatus").textContent = "";
+  $("lbCopyBar").classList.add("hidden"); $("lbOcrText").value = "";
+  img.src = urlCache[name] || "";
+  $("lightbox").classList.remove("hidden");
+  // 이미지가 실제 표시된 뒤라야 원본px→표시px 배율을 알 수 있으므로 load 후 OCR/정렬.
+  img.onload = () => runLightboxOcr(name);
+  if (img.complete && img.naturalWidth) runLightboxOcr(name);
 }
-function closeLightbox() { $("lightbox").classList.add("hidden"); $("lbImg").src = ""; }
+function closeLightbox() {
+  $("lightbox").classList.add("hidden");
+  $("lbImg").src = ""; $("lbTextLayer").innerHTML = ""; $("lbOcrStatus").textContent = "";
+  $("lbCopyBar").classList.add("hidden"); $("lbOcrText").value = "";
+  _lbName = "";
+}
+
+// ===== 영수증 이미지 텍스트 선택(OCR 텍스트 레이어) =====
+// Tesseract.js로 이미지의 '글자+좌표'를 얻어, 이미지 위에 투명 텍스트를 좌표에 맞춰 깐다.
+// 그 텍스트가 진짜 DOM이라 마우스로 드래그 선택 → Ctrl+C 복사가 된다(PDF 텍스트 레이어와 동일 원리).
+let ocrCache = {};            // filename -> [{text,x0,y0,x1,y1}] (원본 이미지 px 기준)
+let _lbName = "";             // 현재 라이트박스에 뜬 파일명(비동기 OCR이 늦게 와도 오배치 방지)
+let _tessPromise = null, _tessWorker = null;
+const TESSERACT_JS = "https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js";
+
+function loadTesseract() {
+  if (_tessPromise) return _tessPromise;
+  _tessPromise = new Promise((res, rej) => {
+    if (window.Tesseract) return res(window.Tesseract);
+    const s = document.createElement("script");
+    s.src = TESSERACT_JS; s.async = true;
+    s.onload = () => res(window.Tesseract);
+    s.onerror = () => rej(new Error("Tesseract.js 로드 실패"));
+    document.head.appendChild(s);
+  });
+  return _tessPromise;
+}
+async function getOcrWorker() {
+  if (_tessWorker) return _tessWorker;
+  const T = await loadTesseract();
+  const w = await T.createWorker();
+  await w.loadLanguage("kor+eng");
+  await w.initialize("kor+eng");
+  _tessWorker = w;
+  return w;
+}
+
+async function runLightboxOcr(name) {
+  const status = $("lbOcrStatus");
+  if (ocrCache[name]) {   // 한 번 인식한 영수증은 캐시 사용(재인식 안 함)
+    renderTextLayer(name);
+    status.textContent = ocrCache[name].length ? "글자를 네모로 감싸 드래그하면 복사돼요" : "인식된 글자가 없어요";
+    return;
+  }
+  status.textContent = "글자 인식 중… (처음엔 몇 초 걸려요)";
+  try {
+    const worker = await getOcrWorker();
+    // 휴대폰 사진은 EXIF 회전정보가 있어, <img>는 똑바로 보이지만 원본 파일 픽셀은 회전돼 있다.
+    // Tesseract에 원본 파일을 그대로 주면 좌표 기준이 회전돼 텍스트 레이어가 어긋난다.
+    // → 화면에 보이는 <img>(EXIF 적용됨)를 캔버스에 그려, 표시와 같은 방향의 픽셀로 인식한다.
+    const img = $("lbImg");
+    let source = urlCache[name];
+    if (img.naturalWidth) {
+      const cv = document.createElement("canvas");
+      cv.width = img.naturalWidth; cv.height = img.naturalHeight;
+      cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height);
+      source = cv;
+    }
+    const { data } = await worker.recognize(source);   // 표시와 같은 방향·해상도로 인식
+    const words = (data.words || [])
+      .filter((w) => (w.text || "").trim())
+      .map((w) => ({ text: w.text, x0: w.bbox.x0, y0: w.bbox.y0, x1: w.bbox.x1, y1: w.bbox.y1 }));
+    ocrCache[name] = words;
+    if (_lbName === name) {   // 인식하는 동안 다른 영수증으로 넘어갔으면 배치 생략
+      renderTextLayer(name);
+      status.textContent = words.length ? "글자를 네모로 감싸 드래그하면 복사돼요" : "인식된 글자가 없어요";
+    }
+  } catch (e) {
+    if (_lbName === name) status.textContent = "글자 인식 실패 — 인터넷 연결을 확인하세요";
+  }
+}
+
+// OCR 단어를 이미지 표시 크기에 맞춰 '단어 박스'로 배치(화면px 기준 좌표를 _lbWords에 저장).
+let _lbWords = [];              // [{text,left,top,w,h}] 표시px 기준
+function renderTextLayer(name) {
+  const img = $("lbImg"), layer = $("lbTextLayer");
+  const words = ocrCache[name] || [];
+  if (!img.naturalWidth) return;
+  const scale = img.clientWidth / img.naturalWidth;   // 원본px → 표시px
+  layer.style.width = img.clientWidth + "px";
+  layer.style.height = img.clientHeight + "px";
+  _lbWords = words.map((w) => ({
+    text: w.text, left: w.x0 * scale, top: w.y0 * scale,
+    w: (w.x1 - w.x0) * scale, h: (w.y1 - w.y0) * scale,
+  }));
+  layer.innerHTML = _lbWords.map((w, i) =>
+    `<div class="lb-w" data-i="${i}" style="left:${w.left.toFixed(1)}px;top:${w.top.toFixed(1)}px;width:${w.w.toFixed(1)}px;height:${w.h.toFixed(1)}px"></div>`
+  ).join("") + `<div id="lbSelRect" class="lb-selrect hidden"></div>`;
+}
+
+// ----- 네모로 감싸 드래그 → 겹친 단어만 골라 자동 복사 -----
+// 절대배치 span의 네이티브 텍스트 선택은 오작동(위쪽까지 잡힘)하고, 인트라넷 http에선
+// 클립보드가 막히므로, 직접 영역 선택 + execCommand 폴백 복사로 처리한다.
+let _lbSel = { on: false, x0: 0, y0: 0 };
+function _lbPos(ev) { const r = $("lbTextLayer").getBoundingClientRect(); return { x: ev.clientX - r.left, y: ev.clientY - r.top }; }
+function _lbBox(x0, y0, x1, y1) { return { l: Math.min(x0, x1), t: Math.min(y0, y1), r: Math.max(x0, x1), b: Math.max(y0, y1) }; }
+function _lbDrawRect(box) { const el = $("lbSelRect"); if (!el) return; el.style.left = box.l + "px"; el.style.top = box.t + "px"; el.style.width = (box.r - box.l) + "px"; el.style.height = (box.b - box.t) + "px"; }
+function _lbHit(w, box) { return !(w.left > box.r || w.left + w.w < box.l || w.top > box.b || w.top + w.h < box.t); }
+function _lbHighlight(box) {
+  $("lbTextLayer").querySelectorAll(".lb-w").forEach((n) => n.classList.toggle("on", _lbHit(_lbWords[+n.dataset.i], box)));
+}
+// 겹친 단어를 읽기순(위→아래, 같은 줄은 왼→오)으로 모아 텍스트로. 줄바꿈은 \n.
+function _lbCollect(box) {
+  const hit = _lbWords.filter((w) => _lbHit(w, box));
+  if (!hit.length) return "";
+  hit.sort((a, b) => (a.top - b.top) || (a.left - b.left));
+  const lines = []; let cur = [], baseTop = null;
+  for (const w of hit) {
+    if (baseTop === null || Math.abs(w.top - baseTop) <= w.h * 0.6) { cur.push(w); if (baseTop === null) baseTop = w.top; }
+    else { lines.push(cur); cur = [w]; baseTop = w.top; }
+  }
+  if (cur.length) lines.push(cur);
+  return lines.map((ln) => ln.sort((a, b) => a.left - b.left).map((w) => w.text).join(" ")).join("\n");
+}
+async function _lbCopy(t) {
+  try { if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(t); return true; } } catch (e) {}
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = t; ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.appendChild(ta); ta.focus(); ta.select();
+    const ok = document.execCommand("copy"); ta.remove(); return ok;
+  } catch (e) { return false; }
+}
+function _lbInit() {
+  const layer = $("lbTextLayer");
+  if (!layer || layer._selInit) return; layer._selInit = true;
+  layer.addEventListener("mousedown", (ev) => {
+    if (!_lbWords.length) return;
+    ev.preventDefault();
+    _lbSel.on = true; const p = _lbPos(ev); _lbSel.x0 = p.x; _lbSel.y0 = p.y;
+    const box = _lbBox(p.x, p.y, p.x, p.y); _lbDrawRect(box); $("lbSelRect").classList.remove("hidden"); _lbHighlight(box);
+  });
+  window.addEventListener("mousemove", (ev) => {
+    if (!_lbSel.on) return; const p = _lbPos(ev); const box = _lbBox(_lbSel.x0, _lbSel.y0, p.x, p.y); _lbDrawRect(box); _lbHighlight(box);
+  });
+  window.addEventListener("mouseup", async (ev) => {
+    if (!_lbSel.on) return; _lbSel.on = false;
+    const rect = $("lbSelRect"); if (rect) rect.classList.add("hidden");
+    const p = _lbPos(ev); const t = _lbCollect(_lbBox(_lbSel.x0, _lbSel.y0, p.x, p.y));
+    const status = $("lbOcrStatus");
+    if (!t) { $("lbCopyBar").classList.add("hidden"); if (status) status.textContent = "글자를 네모로 감싸 드래그하면 복사돼요"; return; }
+    // 드래그 결과를 눈에 보이는 상자에 채우고 자동 복사 시도. 자동 복사가 막힌 환경(http 등)이라도
+    // 상자에서 [복사] 버튼이나 Ctrl+C 로 확실히 복사할 수 있게 한다.
+    const ta = $("lbOcrText"); ta.value = t;
+    $("lbCopyBar").classList.remove("hidden");
+    ta.focus(); ta.select();
+    const ok = await _lbCopy(t);
+    if (status) status.textContent = ok
+      ? "✓ 자동 복사됨 — 붙여넣기(Ctrl+V). 안 되면 아래 [복사] 버튼을 누르세요."
+      : "아래 [복사] 버튼을 누르거나, 상자의 글자를 선택해 Ctrl+C 하세요.";
+  });
+  const cbtn = $("lbCopyBtn");
+  if (cbtn) cbtn.addEventListener("click", () => {
+    const ta = $("lbOcrText"); ta.focus(); ta.select();
+    let ok = false; try { ok = document.execCommand("copy"); } catch (e) {}
+    $("lbOcrStatus").textContent = ok ? "✓ 복사됨 — 붙여넣기(Ctrl+V) 하세요." : "복사 실패 — 상자의 글자를 직접 선택해 Ctrl+C 하세요.";
+  });
+}
+_lbInit();
+// 창 크기가 바뀌면 이미지 표시 크기도 바뀌므로 단어 박스를 다시 배치한다.
+window.addEventListener("resize", () => {
+  if (_lbName && !$("lightbox").classList.contains("hidden")) renderTextLayer(_lbName);
+});
 // 검토표의 번호를 눌렀을 때: 그 행에 연결된 영수증 이미지를 라이트박스로 띄운다.
 function previewRow(i) {
   const r = rcptRows[i];
   if (r && r.filename && rcptFiles.some((f) => f.name === r.filename)) openLightbox(r.filename);
+}
+
+// ===== 영수증 모음 인쇄 (비율대로 자동 배치·잘림 없음 → 브라우저 인쇄로 PDF 저장) =====
+// 영수증마다 가로·세로 비율이 달라 개수를 고정하지 않고, 사진첩(justified) 방식으로
+// 각 줄을 페이지 폭에 꽉 채운다. 원본 비율 그대로라 잘리지 않는다.
+// 이미지는 이미 브라우저(rcptFiles)에 있으므로 서버 전송 없이 새 창에 그려 인쇄한다.
+function imgSize(url) {
+  return new Promise((res) => {
+    const im = new Image();
+    im.onload = () => res({ w: im.naturalWidth || 1, h: im.naturalHeight || 1 });
+    im.onerror = () => res(null);
+    im.src = url;
+  });
+}
+
+async function printReceipts() {
+  if (!rcptFiles.length) { note($("analyzeNote"), "warn", "먼저 영수증 이미지를 첨부하세요."); return; }
+  const btn = $("printRcptBtn");
+  if (btn) btn.disabled = true;
+  try {
+    // 원본 첨부 순서대로 각 이미지의 실제 가로·세로를 읽는다(비율 계산용).
+    const items = [];
+    for (const f of rcptFiles) {
+      if (!urlCache[f.name]) urlCache[f.name] = URL.createObjectURL(f);
+      const dim = await imgSize(urlCache[f.name]);
+      if (dim) items.push({ url: urlCache[f.name], a: dim.w / dim.h });
+    }
+    if (!items.length) { note($("analyzeNote"), "warn", "이미지를 읽지 못했어요."); return; }
+    const w = window.open("", "_blank");
+    if (!w) { note($("analyzeNote"), "warn", "팝업이 차단됐어요. 이 사이트의 팝업을 허용한 뒤 다시 시도하세요."); return; }
+    w.document.write(buildReceiptSheetHTML(items));
+    w.document.close();
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+// justified 행 배치 HTML 생성. CW/TARGET_H는 '비율'만 결정하고, 실제 크기는
+// 각 셀 width를 페이지 폭 대비 %로 주어 인쇄 폭에 맞게 자동 스케일된다.
+function buildReceiptSheetHTML(items) {
+  const CW = 1000;            // 가상 페이지 폭(비율 계산용)
+  const TARGET_H = CW * 0.5;  // 목표 행 높이(≈페이지 폭의 절반). 크게 하면 영수증이 커짐.
+  const GAP_PCT = 1.2;        // 셀 사이 간격(페이지 폭 대비 %)
+  const GAP = GAP_PCT / 100 * CW;
+
+  // 행 그룹핑: 목표 높이로 폈을 때 행 폭이 페이지 폭에 도달하면 다음 행으로.
+  const rows = [];
+  let cur = [], sumA = 0;
+  for (const it of items) {
+    cur.push(it); sumA += it.a;
+    if (sumA * TARGET_H + GAP * (cur.length - 1) >= CW) { rows.push({ items: cur, sumA }); cur = []; sumA = 0; }
+  }
+  if (cur.length) rows.push({ items: cur, sumA, last: true });
+
+  const rowsHTML = rows.map((row) => {
+    const n = row.items.length;
+    const totalGap = GAP_PCT * (n - 1);      // 이 행의 간격 총합(%)
+    const avail = 100 - totalGap;            // 이미지가 나눠 가질 실폭(%)
+    const fillH = (CW - GAP * (n - 1)) / row.sumA;  // 폭을 꽉 채웠을 때 행 높이
+    let justify = "space-between", cells;
+    if (row.last && fillH > TARGET_H * 1.5) {
+      // 마지막 덜 찬 행이 과도하게 커지면 목표 높이로 고정하고 왼쪽 정렬.
+      justify = "flex-start";
+      cells = row.items.map((it) =>
+        `<div class="cell" style="width:${(TARGET_H * it.a / CW * 100).toFixed(4)}%"><img src="${it.url}"/></div>`).join("");
+    } else {
+      // 폭을 꽉 채우는 일반 행: 셀 폭을 비율대로 나눠 높이가 자동으로 같아진다.
+      cells = row.items.map((it) =>
+        `<div class="cell" style="width:${(it.a / row.sumA * avail).toFixed(4)}%"><img src="${it.url}"/></div>`).join("");
+    }
+    return `<div class="row" style="justify-content:${justify}">${cells}</div>`;
+  }).join("");
+
+  return `<!doctype html><html lang="ko"><head><meta charset="utf-8"/>
+<title>영수증 모음</title>
+<style>
+  @page { size: A4 portrait; margin: 10mm; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { font-family: -apple-system, "Malgun Gothic", sans-serif; background: #e5e7eb;
+         -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .bar { position: sticky; top: 0; display: flex; gap: 10px; align-items: center;
+         padding: 12px 16px; background: #111827; color: #fff; }
+  .bar b { font-size: 15px; }
+  .bar .sp { flex: 1; }
+  .bar button { padding: 8px 16px; border: 0; border-radius: 8px; font-size: 14px; cursor: pointer;
+                background: #2563eb; color: #fff; font-weight: 600; }
+  .bar .muted { color: #9ca3af; font-size: 12px; }
+  /* 화면에서는 A4 종이(흰 페이지)를 회색 배경 위에 띄워 실제 인쇄물처럼 미리보기 */
+  .sheet { width: 210mm; padding: 10mm; margin: 24px auto; background: #fff;
+           box-shadow: 0 2px 14px rgba(0,0,0,.18); }
+  .row { display: flex; gap: ${GAP_PCT}%; margin-bottom: ${GAP_PCT}%; align-items: flex-start;
+         break-inside: avoid; page-break-inside: avoid; }
+  .cell { overflow: hidden; }
+  .cell img { display: block; width: 100%; height: auto; border: 1px solid #e5e7eb; border-radius: 4px; }
+  @media print {
+    body { background: #fff; }
+    .bar { display: none; }
+    /* 인쇄 시엔 @page 여백이 적용되므로 종이 장식을 없애고 인쇄 영역을 그대로 채운다 */
+    .sheet { width: auto; padding: 0; margin: 0; background: #fff; box-shadow: none; }
+    .cell img { border: none; border-radius: 0; }
+  }
+</style></head><body>
+<div class="bar">
+  <b>영수증 모음 (${items.length}장)</b>
+  <span class="muted">인쇄 대화상자에서 '대상 &rsaquo; PDF로 저장'을 고르면 PDF로 받을 수 있어요.</span>
+  <span class="sp"></span>
+  <button onclick="window.print()">🖨️ 인쇄 / PDF로 저장</button>
+</div>
+<div class="sheet">${rowsHTML}</div>
+</body></html>`;
 }
 // ===== 행 액션 칩(커서 따라다니는 플로팅) =====
 // 번호는 표 맨 왼쪽 고정열이라 표 안에서 왼쪽으로 아이콘을 띄우면 잘린다.
