@@ -72,6 +72,9 @@ def _to_hours(s):
 
 FORM_SHEET = "양식"
 STANDARD_WORK_SECONDS = 9 * 3600   # 정규근무 9시간(점심 포함)
+# 미승인 초과를 신청시간에 합치는 상한: 반올림으로 떨어진 '초 단위 잔여분'만 인정한다.
+# 1분(60초) 이상이면 실제 미승인 근무로 보고 신청시간에서 제외한다(과다 청구 방지).
+UNAPPROVED_CARRY_MAX_SECONDS = 60
 WORK_START_FLOOR_SECONDS = 8 * 3600  # 근무시작 기준 하한: 08:00 이전 출근은 08:00부터로 본다
 DAY_SECONDS = 86400
 
@@ -144,12 +147,31 @@ def _find_ot_column(ws, header_row):
     return None
 
 
+def _find_unapproved_ot_column(ws, header_row):
+    """'미승인 초과 근로시간' 합계 열을 찾는다.
+    - 헤더행에 '미승인 초과 근로시간' 단일 컬럼이 있거나,
+    - 상위 그룹행(헤더행-1)에 '미승인' 병합헤더 + 헤더행에 '초과근로시간' 합계 컬럼.
+    못 찾으면 사용자 지정 위치인 U열(21)로 폴백. 그마저 없으면 None."""
+    for c in range(1, ws.max_column + 1):
+        if str(ws.cell(header_row, c).value or "").strip() == "미승인 초과 근로시간":
+            return c
+    if header_row > 1:
+        for c in range(1, ws.max_column + 1):
+            grp = str(ws.cell(header_row - 1, c).value or "").strip()
+            sub = str(ws.cell(header_row, c).value or "").strip()
+            if grp == "미승인" and sub in ("초과근로시간", "초과 근로시간"):
+                return c
+    return 21 if ws.max_column >= 21 else None  # U열(21) 폴백
+
+
 # ---------------------------------------------------------------- 근태 읽기
 def parse_attendance(src_path_or_bytes):
     """
-    월간 근태현황을 읽어 (name, year, month, records) 반환.
+    월간 근태현황을 읽어 (name, year, month, records, unapproved_total_h) 반환.
     records: list[dict] 키 = day(int), clock_in(sec), clock_out(sec),
              approved_ot(sec)  — 승인초과>0 인 날만.
+    unapproved_total_h: 월 전체 '미승인 초과 근로시간' 합계(시간). 화면 지표용.
+             승인 신청시간과 동일하게 일자별 0.5시간 단위 내림 후 합산한다.
     """
     raw = _read_bytes(src_path_or_bytes)
     wb = openpyxl.load_workbook(BytesIO(raw), data_only=True)
@@ -175,32 +197,45 @@ def parse_attendance(src_path_or_bytes):
     c_ot = _find_ot_column(ws, header_row)
     if c_ot is None:
         raise ValueError("근태현황 양식에서 '승인 초과 근로시간' 열을 찾을 수 없습니다.")
+    c_unot = _find_unapproved_ot_column(ws, header_row)  # 미승인 초과 근로시간(U열)
 
     records = []
+    # 월 전체 미승인 초과 근로시간 합계(시간) — 실제 일자 행만, 승인 신청시간과 동일하게
+    # 일자별 0.5시간 단위 내림 후 합산(예: 2:14→2.0, 0:41→0.0).
+    unapproved_total = 0.0
     for r in range(header_row + 1, ws.max_row + 1):
         dval = ws.cell(r, c_date).value
         if not dval:
             continue
+        # 일자(day) 추출 — 날짜가 아닌 행(맨 아래 '근로시간 합계' 총계 행 등)은 건너뛴다.
+        # (총계 행에도 미승인 합계값이 들어 있어, 안 거르면 일자별 합과 중복돼 2배가 된다.)
+        ds = str(dval)
+        day = None
+        if hasattr(dval, "day"):
+            day = dval.day
+        else:
+            m = re.search(r"-(\d{2})$", ds) or re.search(r"-(\d{1,2})\b", ds)
+            if m:
+                day = int(m.group(1))
+        if day is None:
+            continue
+        # 미승인 초과 근로시간(초). 승인 유무와 무관하게 (실제 일자 행이면) 지표에 누적하고,
+        # 각 날짜 레코드에도 저장한다(신청시간 계산 시 승인초과에 합쳐 초 단위 잔여분을 살린다).
+        # 지표 합계는 승인 신청시간 규칙과 동일하게 일자별 0.5시간 단위 내림 후 합산.
+        un_sec = 0
+        if c_unot:
+            un_sec = _parse_hms(ws.cell(r, c_unot).value) or 0
+            unapproved_total += math.floor(un_sec / 3600.0 * 2) / 2
         ot = _parse_hms(ws.cell(r, c_ot).value) or 0
         cin = _parse_hms(ws.cell(r, c_in).value)
         cout = _parse_hms(ws.cell(r, c_out).value)
         if ot <= 0 or cin is None or cout is None:
             continue
-        # 일자(day) 추출
-        ds = str(dval)
-        day = None
-        m = re.search(r"-(\d{2})$", ds) or re.search(r"-(\d{1,2})\b", ds)
-        if hasattr(dval, "day"):
-            day = dval.day
-        elif m:
-            day = int(m.group(1))
-        if day is None:
-            continue
         if year is None and hasattr(dval, "year"):
             year, month = dval.year, dval.month
-        records.append({"day": day, "clock_in": cin,
-                        "clock_out": cout, "approved_ot": ot})
-    return name, year, month, records
+        records.append({"day": day, "clock_in": cin, "clock_out": cout,
+                        "approved_ot": ot, "unapproved_ot": un_sec})
+    return name, year, month, records, unapproved_total
 
 
 # ---------------------------------------------------------------- 양식 채우기
@@ -216,7 +251,7 @@ def fill_overtime(template_path_or_bytes, attendance_path_or_bytes,
             (헤더는 15행, 일자별 데이터는 16+일자 행)
     """
     extras = extras or {}
-    a_name, a_year, a_month, records = parse_attendance(attendance_path_or_bytes)
+    a_name, a_year, a_month, records, _ = parse_attendance(attendance_path_or_bytes)
     name = name or a_name
     month = month or a_month
 
@@ -255,18 +290,23 @@ def fill_overtime(template_path_or_bytes, attendance_path_or_bytes,
         i_sec = eff_in + STANDARD_WORK_SECONDS            # 근무시작 = max(출근,08:00)+9h
         j_sec = rec["clock_out"]                          # 근무종료 = 퇴근(실제)
         ot_sec = rec.get("approved_ot", 0) or 0           # 승인 초과 근로시간
+        un_raw = rec.get("unapproved_ot", 0) or 0         # 미승인 초과 근로시간(초)
+        # 안전장치: 1분 이상 미승인은 실제 미승인 근무로 보고 제외, 60초 미만(반올림 잔여분)만 합친다.
+        un_sec = un_raw if un_raw < UNAPPROVED_CARRY_MAX_SECONDS else 0
         early_in = rec["clock_in"] < WORK_START_FLOOR_SECONDS  # 08:00 이전 조기출근
         if early_in:
             # 조기출근: 근무시작(17:00) 이전 시간은 연장에서 제외한다.
-            # 신청 기준 = 퇴근 - 근무시작. 실근무종료(M)=퇴근으로 두면
+            # 신청 기준 = 퇴근 - 근무시작(=승인+미승인 전체). 실근무종료(M)=퇴근으로 두면
             # 양식 수식 S = (M-L)*24 - N - Q = (퇴근-근무시작) - 제외 - 대체휴무 가 된다.
             claim_sec = max(0, j_sec - i_sec)
             m_sec = j_sec
         else:
-            # 08:00 이후 출근: 승인초과 값을 그대로 신청. 실근무종료(M)=근무시작+승인초과.
-            # 양식 수식 S = (M-L)*24 - N - Q = 승인초과 - 제외 - 대체휴무 가 된다.
-            claim_sec = ot_sec
-            m_sec = i_sec + ot_sec
+            # 08:00 이후 출근: 승인초과 + 미승인초과 를 신청 기준으로 한다.
+            # (승인초과가 59:19처럼 정시 직전이고 남은 초가 미승인으로 떨어진 경우,
+            #  실제 1시간을 넘긴 근무가 0.5로 깎이지 않도록 초 단위 잔여분을 합친다.)
+            # 실근무종료(M)=근무시작+승인+미승인 → 양식 수식 S = (승인+미승인) - 제외 - 대체휴무.
+            claim_sec = ot_sec + un_sec
+            m_sec = i_sec + ot_sec + un_sec
         xml = _set_cell(xml, f"I{r}", "num", repr(_fraction(i_sec)))   # 근무시작(표시)
         xml = _set_cell(xml, f"J{r}", "num", repr(_fraction(j_sec)))   # 근무종료(표시=퇴근)
         xml = _set_cell(xml, f"L{r}", "num", repr(_fraction(i_sec)))   # 실 근무시작
@@ -348,8 +388,8 @@ if __name__ == "__main__":
     import sys
     att = sys.argv[1] if len(sys.argv) > 1 else "남소희_월간근태현황_202605.xlsx"
     tpl = sys.argv[2] if len(sys.argv) > 2 else "초과근무(수당)신청서_양식.xlsx"
-    name, year, month, recs = parse_attendance(att)
-    print(f"이름={name} 연={year} 월={month} 대상일수={len(recs)}")
+    name, year, month, recs, unapproved = parse_attendance(att)
+    print(f"이름={name} 연={year} 월={month} 대상일수={len(recs)} 미승인합계(시간)={unapproved}")
     for rc in recs:
         print(rc)
     buf, n = fill_overtime(tpl, att)

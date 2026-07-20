@@ -1276,7 +1276,7 @@ def render_overtime():
             return
 
         try:
-            name, year, month, records = parse_attendance(att_file.getvalue())
+            name, year, month, records, _ = parse_attendance(att_file.getvalue())
         except Exception as e:  # noqa: BLE001
             st.error(f"근태현황을 읽지 못했습니다: {e}")
             return

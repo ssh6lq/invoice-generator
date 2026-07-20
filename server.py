@@ -60,8 +60,8 @@ XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 # 사내 사용자에게 주소·모델·토큰이 노출되지 않도록 화면/응답에는 절대 내보내지 않는다.
 ENV_PROVIDER = os.getenv("RECEIPT_PROVIDER", "로컬 서버")
 ENV_BASE_URL = os.getenv("RECEIPT_BASE_URL",
-                         "https://vllm-qwen.proxy.ainexus.ktcloud.com/v1")
-ENV_MODEL = os.getenv("RECEIPT_MODEL", "/models/Qwen3.6-35B-A3B-FP8")
+                         "http://192.168.1.51:8000")
+ENV_MODEL = os.getenv("RECEIPT_MODEL", "vllm-qwen")
 # Bearer 토큰: OpenAI 호환 클라이언트는 api_key 값을 'Authorization: Bearer <값>'으로 보낸다.
 ENV_API_KEY = (os.getenv("RECEIPT_API_KEY")
                or os.getenv("RECEIPT_BEARER")
@@ -434,7 +434,7 @@ async def expense_generate(
 async def overtime_parse(attendance: UploadFile = File(...)):
     """근태현황(.xlsx)을 읽어 초과근무 대상일 목록을 반환한다."""
     try:
-        name, year, month, records = parse_attendance(await attendance.read())
+        name, year, month, records, unapproved_h = parse_attendance(await attendance.read())
     except Exception as e:  # noqa: BLE001
         raise HTTPException(400, f"근태현황을 읽지 못했습니다: {e}")
     rows = [{
@@ -445,10 +445,16 @@ async def overtime_parse(attendance: UploadFile = File(...)):
         "work_start": _sec_to_hhmm(max(r["clock_in"], WORK_START_FLOOR_SECONDS) + STANDARD_WORK_SECONDS),
         "work_end": _sec_to_hhmm(r["clock_out"]),              # 근무종료 = 퇴근
         "approved_ot": _sec_to_hms(r["approved_ot"]),  # 초 단위까지 노출(예: 01:29:58)
+        # 신청시간 계산용(초 정밀) — 화면 표시는 approved_ot(문자열)로, 계산은 초로 한다.
+        "approved_sec": r["approved_ot"],
+        "unapproved_sec": r.get("unapproved_ot", 0),   # 미승인 초과(초) — 승인초과에 합쳐 계산
         "payoff": "X", "hours": "", "note": "",   # 기본: 대체휴무 미지급
         "exclude": "", "exclude_reason": "",      # 제외할 시간 / 제외 사유
     } for r in records]
-    return {"name": name, "year": year, "month": month, "rows": rows}
+    # 미승인 초과 근로시간(월 전체 합계) — 화면 지표용.
+    # parse_attendance가 일자별 0.5시간 내림 후 합산한 시간값을 그대로 내려준다.
+    return {"name": name, "year": year, "month": month, "rows": rows,
+            "unapproved_ot": round(unapproved_h or 0, 1)}
 
 
 @app.post("/api/overtime/generate")

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>청구서 자동 작성</title>
   <link rel="icon" href="/favicon.ico"/>
-  <link rel="stylesheet" href="/styles.css?v=32"/>
+  <link rel="stylesheet" href="/styles.css?v=31"/>
 </head>
 <body>
   <div class="wrap">
@@ -129,9 +129,10 @@
               <div class="pick">파일 선택</div>
             </div>
             <input type="file" id="rcptInput" class="hidden" multiple accept=".jpg,.jpeg,.png,.webp,.bmp"/>
+            <div id="rcptUploadNote"></div>
             <div class="files-head hidden" id="rcptFilesHead">
               <span class="cnt" id="rcptFilesCnt"></span>
-              <button type="button" class="clr" id="printRcptBtn" onclick="printReceipts()" title="첨부한 영수증들을 비율대로 잘림 없이 배치한 인쇄 화면을 엽니다. '대상: PDF로 저장'으로 PDF도 만들 수 있어요.">🖨️ 영수증 모음 인쇄</button>
+              <button type="button" class="clr" id="printRcptBtn" onclick="printReceipts()" title="첨부한 영수증들을 비율대로 잘림 없이 배치한 인쇄 화면을 엽니다. '대상: PDF로 저장'으로 PDF도 만들 수 있어요.">🖨️ 영수증 프린트</button>
               <button type="button" class="clr" onclick="clearRcptFiles()">전체 삭제</button>
             </div>
             <div class="files" id="rcptFiles"></div>
@@ -257,18 +258,7 @@
   </div>
 
   <div id="lightbox" class="lightbox hidden" onclick="closeLightbox()">
-    <span class="lb-x">✕ 닫기</span>
-    <div id="lbStage" class="lb-stage" onclick="event.stopPropagation()">
-      <div class="lb-imgwrap">
-        <img id="lbImg" src="" alt=""/>
-        <div id="lbTextLayer" class="lb-textlayer"></div>
-      </div>
-      <div id="lbOcrStatus" class="lb-ocr-status"></div>
-      <div id="lbCopyBar" class="lb-copybar hidden">
-        <textarea id="lbOcrText" readonly placeholder="드래그한 글자가 여기에 나와요"></textarea>
-        <button type="button" id="lbCopyBtn">복사</button>
-      </div>
-    </div>
+    <span class="lb-x">✕ 닫기</span><img id="lbImg" src="" alt=""/>
   </div>
 
   <!-- 검토표 행 번호 왼쪽(표 바깥)에 hover 시 떠오르는 액션 칩 -->
@@ -292,6 +282,6 @@
     </div>
   </div>
 
-  <script src="/app.js?v=33"></script>
+  <script src="/app.js?v=34"></script>
 </body>
 </html>

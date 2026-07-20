@@ -188,10 +188,27 @@ function setupDrop(zone, input, onFiles) {
   ["dragleave", "drop"].forEach((e) => zone.addEventListener(e, (ev) => { ev.preventDefault(); zone.classList.remove("drag"); }));
   zone.addEventListener("drop", (ev) => onFiles([...ev.dataTransfer.files]));
 }
+// 영수증 첨부는 이미지 파일만 허용. accept 속성은 파일 선택창의 힌트일 뿐이라
+// 드래그&드롭이나 '모든 파일' 선택으로 xlsx 등이 들어올 수 있어 여기서 직접 막는다.
+const RCPT_EXTS = ["jpg", "jpeg", "png", "webp", "bmp"];
+function isImageFile(f) {
+  if (f.type && f.type.startsWith("image/")) return true;   // MIME 우선
+  const ext = (f.name.split(".").pop() || "").toLowerCase();
+  return RCPT_EXTS.includes(ext);
+}
 function addRcptFiles(files) {
   const have = new Set(rcptFiles.map((f) => f.name));
-  files.forEach((f) => { if (!have.has(f.name)) { rcptFiles.push(f); have.add(f.name); } });
+  const rejected = [];
+  files.forEach((f) => {
+    if (!isImageFile(f)) { rejected.push(f.name); return; }   // 이미지가 아니면 제외
+    if (!have.has(f.name)) { rcptFiles.push(f); have.add(f.name); }
+  });
   renderRcptFiles(); renderThumbs(); updateAnalyzeBtn();
+  // 안내는 업로드(2단계) 영역에 띄운다. 이미지가 새로 들어오면 이전 경고는 지운다.
+  note($("rcptUploadNote"), "warn",
+    rejected.length
+      ? `이미지 파일만 첨부할 수 있어요 (JPG · PNG · WEBP · BMP). 제외됨: ${rejected.map(esc).join(", ")}`
+      : "");
 }
 function renderRcptFiles() {
   $("rcptFiles").innerHTML = rcptFiles.map((f, i) =>
@@ -206,6 +223,7 @@ function clearRcptFiles() {
   if (!confirm(`첨부한 영수증 ${rcptFiles.length}장을 모두 삭제할까요?`)) return;
   rcptFiles.forEach((f) => { if (urlCache[f.name]) { URL.revokeObjectURL(urlCache[f.name]); delete urlCache[f.name]; } });
   rcptFiles = [];
+  note($("rcptUploadNote"), "", "");   // 첨부 경고도 함께 정리
   renderRcptFiles(); renderThumbs(); updateAnalyzeBtn();
 }
 function removeRcpt(i) {
@@ -233,180 +251,10 @@ function renderThumbs() {
 function openLightbox(name) {
   // 미리보기 토글을 켠 적이 없어 아직 URL이 없으면, 원본 파일에서 즉석으로 만든다.
   if (!urlCache[name]) { const f = rcptFiles.find((x) => x.name === name); if (f) urlCache[name] = URL.createObjectURL(f); }
-  _lbName = name;
-  const img = $("lbImg");
-  $("lbTextLayer").innerHTML = "";
-  $("lbOcrStatus").textContent = "";
-  $("lbCopyBar").classList.add("hidden"); $("lbOcrText").value = "";
-  img.src = urlCache[name] || "";
-  $("lightbox").classList.remove("hidden");
-  // 이미지가 실제 표시된 뒤라야 원본px→표시px 배율을 알 수 있으므로 load 후 OCR/정렬.
-  img.onload = () => runLightboxOcr(name);
-  if (img.complete && img.naturalWidth) runLightboxOcr(name);
+  $("lbImg").src = urlCache[name] || ""; $("lightbox").classList.remove("hidden");
 }
-function closeLightbox() {
-  $("lightbox").classList.add("hidden");
-  $("lbImg").src = ""; $("lbTextLayer").innerHTML = ""; $("lbOcrStatus").textContent = "";
-  $("lbCopyBar").classList.add("hidden"); $("lbOcrText").value = "";
-  _lbName = "";
-}
+function closeLightbox() { $("lightbox").classList.add("hidden"); $("lbImg").src = ""; }
 
-// ===== 영수증 이미지 텍스트 선택(OCR 텍스트 레이어) =====
-// Tesseract.js로 이미지의 '글자+좌표'를 얻어, 이미지 위에 투명 텍스트를 좌표에 맞춰 깐다.
-// 그 텍스트가 진짜 DOM이라 마우스로 드래그 선택 → Ctrl+C 복사가 된다(PDF 텍스트 레이어와 동일 원리).
-let ocrCache = {};            // filename -> [{text,x0,y0,x1,y1}] (원본 이미지 px 기준)
-let _lbName = "";             // 현재 라이트박스에 뜬 파일명(비동기 OCR이 늦게 와도 오배치 방지)
-let _tessPromise = null, _tessWorker = null;
-const TESSERACT_JS = "https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js";
-
-function loadTesseract() {
-  if (_tessPromise) return _tessPromise;
-  _tessPromise = new Promise((res, rej) => {
-    if (window.Tesseract) return res(window.Tesseract);
-    const s = document.createElement("script");
-    s.src = TESSERACT_JS; s.async = true;
-    s.onload = () => res(window.Tesseract);
-    s.onerror = () => rej(new Error("Tesseract.js 로드 실패"));
-    document.head.appendChild(s);
-  });
-  return _tessPromise;
-}
-async function getOcrWorker() {
-  if (_tessWorker) return _tessWorker;
-  const T = await loadTesseract();
-  const w = await T.createWorker();
-  await w.loadLanguage("kor+eng");
-  await w.initialize("kor+eng");
-  _tessWorker = w;
-  return w;
-}
-
-async function runLightboxOcr(name) {
-  const status = $("lbOcrStatus");
-  if (ocrCache[name]) {   // 한 번 인식한 영수증은 캐시 사용(재인식 안 함)
-    renderTextLayer(name);
-    status.textContent = ocrCache[name].length ? "글자를 네모로 감싸 드래그하면 복사돼요" : "인식된 글자가 없어요";
-    return;
-  }
-  status.textContent = "글자 인식 중… (처음엔 몇 초 걸려요)";
-  try {
-    const worker = await getOcrWorker();
-    // 휴대폰 사진은 EXIF 회전정보가 있어, <img>는 똑바로 보이지만 원본 파일 픽셀은 회전돼 있다.
-    // Tesseract에 원본 파일을 그대로 주면 좌표 기준이 회전돼 텍스트 레이어가 어긋난다.
-    // → 화면에 보이는 <img>(EXIF 적용됨)를 캔버스에 그려, 표시와 같은 방향의 픽셀로 인식한다.
-    const img = $("lbImg");
-    let source = urlCache[name];
-    if (img.naturalWidth) {
-      const cv = document.createElement("canvas");
-      cv.width = img.naturalWidth; cv.height = img.naturalHeight;
-      cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height);
-      source = cv;
-    }
-    const { data } = await worker.recognize(source);   // 표시와 같은 방향·해상도로 인식
-    const words = (data.words || [])
-      .filter((w) => (w.text || "").trim())
-      .map((w) => ({ text: w.text, x0: w.bbox.x0, y0: w.bbox.y0, x1: w.bbox.x1, y1: w.bbox.y1 }));
-    ocrCache[name] = words;
-    if (_lbName === name) {   // 인식하는 동안 다른 영수증으로 넘어갔으면 배치 생략
-      renderTextLayer(name);
-      status.textContent = words.length ? "글자를 네모로 감싸 드래그하면 복사돼요" : "인식된 글자가 없어요";
-    }
-  } catch (e) {
-    if (_lbName === name) status.textContent = "글자 인식 실패 — 인터넷 연결을 확인하세요";
-  }
-}
-
-// OCR 단어를 이미지 표시 크기에 맞춰 '단어 박스'로 배치(화면px 기준 좌표를 _lbWords에 저장).
-let _lbWords = [];              // [{text,left,top,w,h}] 표시px 기준
-function renderTextLayer(name) {
-  const img = $("lbImg"), layer = $("lbTextLayer");
-  const words = ocrCache[name] || [];
-  if (!img.naturalWidth) return;
-  const scale = img.clientWidth / img.naturalWidth;   // 원본px → 표시px
-  layer.style.width = img.clientWidth + "px";
-  layer.style.height = img.clientHeight + "px";
-  _lbWords = words.map((w) => ({
-    text: w.text, left: w.x0 * scale, top: w.y0 * scale,
-    w: (w.x1 - w.x0) * scale, h: (w.y1 - w.y0) * scale,
-  }));
-  layer.innerHTML = _lbWords.map((w, i) =>
-    `<div class="lb-w" data-i="${i}" style="left:${w.left.toFixed(1)}px;top:${w.top.toFixed(1)}px;width:${w.w.toFixed(1)}px;height:${w.h.toFixed(1)}px"></div>`
-  ).join("") + `<div id="lbSelRect" class="lb-selrect hidden"></div>`;
-}
-
-// ----- 네모로 감싸 드래그 → 겹친 단어만 골라 자동 복사 -----
-// 절대배치 span의 네이티브 텍스트 선택은 오작동(위쪽까지 잡힘)하고, 인트라넷 http에선
-// 클립보드가 막히므로, 직접 영역 선택 + execCommand 폴백 복사로 처리한다.
-let _lbSel = { on: false, x0: 0, y0: 0 };
-function _lbPos(ev) { const r = $("lbTextLayer").getBoundingClientRect(); return { x: ev.clientX - r.left, y: ev.clientY - r.top }; }
-function _lbBox(x0, y0, x1, y1) { return { l: Math.min(x0, x1), t: Math.min(y0, y1), r: Math.max(x0, x1), b: Math.max(y0, y1) }; }
-function _lbDrawRect(box) { const el = $("lbSelRect"); if (!el) return; el.style.left = box.l + "px"; el.style.top = box.t + "px"; el.style.width = (box.r - box.l) + "px"; el.style.height = (box.b - box.t) + "px"; }
-function _lbHit(w, box) { return !(w.left > box.r || w.left + w.w < box.l || w.top > box.b || w.top + w.h < box.t); }
-function _lbHighlight(box) {
-  $("lbTextLayer").querySelectorAll(".lb-w").forEach((n) => n.classList.toggle("on", _lbHit(_lbWords[+n.dataset.i], box)));
-}
-// 겹친 단어를 읽기순(위→아래, 같은 줄은 왼→오)으로 모아 텍스트로. 줄바꿈은 \n.
-function _lbCollect(box) {
-  const hit = _lbWords.filter((w) => _lbHit(w, box));
-  if (!hit.length) return "";
-  hit.sort((a, b) => (a.top - b.top) || (a.left - b.left));
-  const lines = []; let cur = [], baseTop = null;
-  for (const w of hit) {
-    if (baseTop === null || Math.abs(w.top - baseTop) <= w.h * 0.6) { cur.push(w); if (baseTop === null) baseTop = w.top; }
-    else { lines.push(cur); cur = [w]; baseTop = w.top; }
-  }
-  if (cur.length) lines.push(cur);
-  return lines.map((ln) => ln.sort((a, b) => a.left - b.left).map((w) => w.text).join(" ")).join("\n");
-}
-async function _lbCopy(t) {
-  try { if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(t); return true; } } catch (e) {}
-  try {
-    const ta = document.createElement("textarea");
-    ta.value = t; ta.style.position = "fixed"; ta.style.opacity = "0";
-    document.body.appendChild(ta); ta.focus(); ta.select();
-    const ok = document.execCommand("copy"); ta.remove(); return ok;
-  } catch (e) { return false; }
-}
-function _lbInit() {
-  const layer = $("lbTextLayer");
-  if (!layer || layer._selInit) return; layer._selInit = true;
-  layer.addEventListener("mousedown", (ev) => {
-    if (!_lbWords.length) return;
-    ev.preventDefault();
-    _lbSel.on = true; const p = _lbPos(ev); _lbSel.x0 = p.x; _lbSel.y0 = p.y;
-    const box = _lbBox(p.x, p.y, p.x, p.y); _lbDrawRect(box); $("lbSelRect").classList.remove("hidden"); _lbHighlight(box);
-  });
-  window.addEventListener("mousemove", (ev) => {
-    if (!_lbSel.on) return; const p = _lbPos(ev); const box = _lbBox(_lbSel.x0, _lbSel.y0, p.x, p.y); _lbDrawRect(box); _lbHighlight(box);
-  });
-  window.addEventListener("mouseup", async (ev) => {
-    if (!_lbSel.on) return; _lbSel.on = false;
-    const rect = $("lbSelRect"); if (rect) rect.classList.add("hidden");
-    const p = _lbPos(ev); const t = _lbCollect(_lbBox(_lbSel.x0, _lbSel.y0, p.x, p.y));
-    const status = $("lbOcrStatus");
-    if (!t) { $("lbCopyBar").classList.add("hidden"); if (status) status.textContent = "글자를 네모로 감싸 드래그하면 복사돼요"; return; }
-    // 드래그 결과를 눈에 보이는 상자에 채우고 자동 복사 시도. 자동 복사가 막힌 환경(http 등)이라도
-    // 상자에서 [복사] 버튼이나 Ctrl+C 로 확실히 복사할 수 있게 한다.
-    const ta = $("lbOcrText"); ta.value = t;
-    $("lbCopyBar").classList.remove("hidden");
-    ta.focus(); ta.select();
-    const ok = await _lbCopy(t);
-    if (status) status.textContent = ok
-      ? "✓ 자동 복사됨 — 붙여넣기(Ctrl+V). 안 되면 아래 [복사] 버튼을 누르세요."
-      : "아래 [복사] 버튼을 누르거나, 상자의 글자를 선택해 Ctrl+C 하세요.";
-  });
-  const cbtn = $("lbCopyBtn");
-  if (cbtn) cbtn.addEventListener("click", () => {
-    const ta = $("lbOcrText"); ta.focus(); ta.select();
-    let ok = false; try { ok = document.execCommand("copy"); } catch (e) {}
-    $("lbOcrStatus").textContent = ok ? "✓ 복사됨 — 붙여넣기(Ctrl+V) 하세요." : "복사 실패 — 상자의 글자를 직접 선택해 Ctrl+C 하세요.";
-  });
-}
-_lbInit();
-// 창 크기가 바뀌면 이미지 표시 크기도 바뀌므로 단어 박스를 다시 배치한다.
-window.addEventListener("resize", () => {
-  if (_lbName && !$("lightbox").classList.contains("hidden")) renderTextLayer(_lbName);
-});
 // 검토표의 번호를 눌렀을 때: 그 행에 연결된 영수증 이미지를 라이트박스로 띄운다.
 function previewRow(i) {
   const r = rcptRows[i];
@@ -976,11 +824,13 @@ async function parseAttendance(files) {
     if (!resp.ok) throw new Error(await errText(resp));
     const d = await resp.json(); otRows = d.rows; otPeriod = { year: d.year, month: d.month };
     note($("attNote"), "info", `📎 ${esc(attFile.name)}`);
+    const unapproved = Number(d.unapproved_ot) || 0;   // 월 전체 미승인 초과 근로시간(소수 시간)
     $("otMetrics").innerHTML =
       `<div class="metric"><div class="k">이름</div><div class="v">${esc(d.name) || "-"}</div></div>` +
       `<div class="metric"><div class="k">기간</div><div class="v">${d.year || "-"}.${d.month || "-"}</div></div>` +
       `<div class="metric"><div class="k">초과근무 대상일</div><div class="v">${otRows.length}일</div></div>` +
-      `<div class="metric"><div class="k">총 신청시간</div><div class="v"><span id="otTotalReq">${fmtHalf(otTotalReq())}</span>시간</div></div>`;
+      `<div class="metric"><div class="k">총 신청시간</div><div class="v"><span id="otTotalReq">${fmtHalf(otTotalReq())}</span>시간</div></div>` +
+      `<div class="metric"><div class="k">미승인 신청시간</div><div class="v">${fmtHalf(unapproved)}시간</div></div>`;
     renderAtt();
     $("otReviewCard").classList.remove("hidden"); $("otGenCard").classList.remove("hidden");
     if (!otRows.length) note($("attNote"), "warn", "초과근무 대상일이 없어요.");
@@ -996,19 +846,33 @@ function hmToDec(s) { const m = /(\d+):(\d{1,2})/.exec(String(s || "")); return 
 // 대체휴무 시간 입력 → 소수 시간. "1" / "1.5" / "1:30" 모두 허용.
 function offHoursDec(s) { s = String(s || "").trim(); if (!s) return 0; if (s.includes(":")) return hmToDec(s) || 0; const n = parseFloat(s); return isNaN(n) ? 0 : n; }
 const fmtHalf = (v) => (Number.isInteger(v) ? String(v) : v.toFixed(1));
+// 미승인 초과를 신청시간에 합치는 상한(초). 1분 이상 미승인은 제외(overtime_filler.py 와 동일 기준).
+const UNAPPROVED_CARRY_MAX_SEC = 60;
 // 신청 시간(30분 단위 내림, 0.5 step). 대체휴무 지급(O)이면 대체휴무 시간만큼 차감.
 // 기준값(base):
 //   - 08:00 이전 조기출근: 퇴근 - 근무시작(17:00)  (근무시작 이전 시간은 연장 제외)
-//   - 그 외 출근:           승인초과 값 그대로
+//   - 그 외 출근:           승인초과 + 미승인초과 (초 정밀). 승인초과가 59:19처럼 정시 직전이고
+//                           남은 초가 미승인으로 떨어진 경우, 실제 1시간 근무가 0.5로 깎이지 않게 합친다.
 // 이후 ROUNDDOWN(MAX(0, base - 제외할시간 - 대체휴무)*2)/2. overtime_filler.py 와 동일 규칙.
-function otReqHoursNum(r) {
+// 실제로 신청시간에 합쳐지는 미승인 초(초). 조기출근이거나 1분 이상이면 0.
+function otCarrySec(r) {
+  const cin = hmToDec(r.clock_in);
+  if (cin != null && cin < 8) return 0;             // 조기출근은 퇴근-근무시작으로 이미 전체 반영
+  const ap = Number(r.approved_sec), unRaw = Number(r.unapproved_sec) || 0;
+  if (!Number.isFinite(ap)) return 0;
+  return unRaw < UNAPPROVED_CARRY_MAX_SEC ? unRaw : 0;
+}
+function otReqHoursNum(r, includeCarry = true) {
   const cin = hmToDec(r.clock_in);                  // 출근시간
   let base;
   if (cin != null && cin < 8) {                     // 08:00 이전 조기출근
     const ws = hmToDec(r.work_start), we = hmToDec(r.work_end);  // 근무시작(17:00)·근무종료(퇴근)
     base = (ws != null && we != null) ? Math.max(0, we - ws) : null;
   } else {
-    base = hmToDec(r.approved_ot);                  // 승인 초과 근로시간
+    // 승인초과 + 미승인초과 (초 → 시간). 서버가 초 정밀값(approved_sec/unapproved_sec)을 내려준다.
+    // 안전장치: 1분(60초) 이상 미승인은 실제 미승인 근무로 보고 제외, 60초 미만(반올림 잔여분)만 합친다.
+    const ap = Number(r.approved_sec), un = includeCarry ? otCarrySec(r) : 0;
+    base = Number.isFinite(ap) ? (ap + un) / 3600 : hmToDec(r.approved_ot);
   }
   if (base == null) return null;
   const excl = offHoursDec(r.exclude);              // 제외할 시간
@@ -1033,7 +897,27 @@ function composeNote(r) {
 }
 function otReqHours(r) { const v = otReqHoursNum(r); return v == null ? "" : fmtHalf(v); }
 function otTotalReq() { return otRows.reduce((s, r) => s + (otReqHoursNum(r) || 0), 0); }
-function refreshReq(i) { const el = $(`reqh-${i}`); if (el) el.textContent = otReqHours(otRows[i]); }
+// 초 → "H:MM:SS" (툴팁 표기용)
+function secToHms(t) {
+  t = Math.round(t); const h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), s = t % 60;
+  return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+// 미승인 합산으로 신청시간이 '실제로 바뀐' 행인가? (합산 전/후 결과가 다르면 true)
+function otIsCarried(r) {
+  if (otCarrySec(r) <= 0) return false;
+  return otReqHoursNum(r, true) !== otReqHoursNum(r, false);
+}
+// 툴팁 문구: 승인초과 + 미승인초과 = 합계 → 신청 N시간
+function otCarryTip(r) {
+  const ap = Number(r.approved_sec) || 0, un = otCarrySec(r);
+  return `승인초과 ${esc(r.approved_ot)} + 미승인 ${un}초 = ${secToHms(ap + un)} → 신청 ${otReqHours(r)}시간`;
+}
+// 신청시간 셀 내용: 미승인 합산으로 값이 바뀐 행은 점선 밑줄 + 툴팁으로 표시
+function reqCellHtml(r) {
+  const val = otReqHours(r);
+  return otIsCarried(r) ? `<span class="reqh-carry" title="${otCarryTip(r)}">${val}</span>` : val;
+}
+function refreshReq(i) { const el = $(`reqh-${i}`); if (el) el.innerHTML = reqCellHtml(otRows[i]); }
 function refreshOtTotal() { const el = $("otTotalReq"); if (el) el.textContent = fmtHalf(otTotalReq()); }
 // 행별 체크박스 토글 → 상세행 펼침/접힘 + 표 재렌더.
 // 체크 해제하면 입력값을 비워, 신청 시간이 자동으로 원래(승인초과)로 되돌아오게 한다.
@@ -1058,7 +942,7 @@ function renderAtt() {
       <td>${otDateLabel(r.day)}</td><td>${esc(r.clock_in)}</td><td>${esc(r.clock_out)}</td><td>${esc(r.work_start)}</td><td>${esc(r.work_end)}</td><td>${esc(r.approved_ot)}</td>
       <td class="c"><label class="chk"><input type="checkbox" ${exOn ? "checked" : ""} onchange="otToggleExcl(${i},this.checked)"/></label></td>
       <td class="c"><label class="chk"><input type="checkbox" ${isO ? "checked" : ""} onchange="otTogglePayoff(${i},this.checked)"/></label></td>
-      <td class="reqh" id="reqh-${i}">${otReqHours(r)}</td></tr>`;
+      <td class="reqh" id="reqh-${i}">${reqCellHtml(r)}</td></tr>`;
     if (!exOn && !isO) return main;
     // 상세 입력행 — 체크한 항목만 노출
     let parts = "";
