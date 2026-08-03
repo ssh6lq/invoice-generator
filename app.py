@@ -752,8 +752,8 @@ def render_expense():
                     help="OpenAI 호환 엔드포인트. vLLM은 보통 끝에 /v1 을 붙입니다.",
                 )
                 model = st.text_input(
-                    "모델명", value="/models/Qwen3.6-35B-A3B-FP8",
-                    placeholder="예: /models/Qwen3.6-35B-A3B-FP8",
+                    "모델명", value="vllm-qwen",
+                    placeholder="예: vllm-qwen",
                     help="서버 구동 시 지정한 모델명과 정확히 같아야 합니다. "
                          "'openai:' 접두어는 붙이지 마세요(자동 제거됨).",
                 )
