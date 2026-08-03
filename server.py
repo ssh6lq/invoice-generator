@@ -412,13 +412,23 @@ async def expense_generate(
             buf, _start, n = fill_workbook(tpl, records, append=False,
                                            basic_info=basic_info)
             return _download(buf.getvalue(), f"{base}.xlsm", XLSM_MIME, count=n)
-        buf, n = build_claim_xlsx(tpl, sort_for_claim(norm), basic_info=basic_info)
+        ordered = sort_for_claim(norm)
+        buf, n = build_claim_xlsx(tpl, ordered, basic_info=basic_info)
         fname = f"{base}.xlsx"
         # '제출용' 다운로드 = 실제 제출 행위로 간주해 경영지원팀 관리자 페이지에 기록한다.
+        # 이때 매크로검토(정렬·매핑) 완료된 최종 표도 함께 보관해 관리자 페이지에서 조회할 수 있게 한다.
         total_claim = sum(int(r["claim"] or 0) for r in norm)
+        review_rows = [{
+            "date": (_to_date(r["date"]).isoformat() if _to_date(r["date"])
+                     else (r["date"] or "")),
+            "store": r["store"] or "", "purpose": r["purpose"] or "",
+            "participants": r["participants"] or "", "note": r["note"] or "",
+            "payment": r["payment"] or "", "amount": r["amount"], "claim": r["claim"],
+            "time": r["time"] or "", "region": r["region"] or "",
+        } for r in ordered]
         submission_store.add_submission(
             dept=basic.get("dept"), name=basic.get("name"), title=basic.get("title"),
-            count=n, total_claim=total_claim, filename=fname,
+            count=n, total_claim=total_claim, filename=fname, rows=review_rows,
         )
         return _download(buf.getvalue(), fname, XLSX_MIME, count=n)
     except ValueError as e:  # 25건 초과 등
@@ -540,6 +550,14 @@ def delete_feedback_api(fid: int, _: bool = Depends(require_admin)):
 @app.get("/api/submissions")
 def list_submissions_api(_: bool = Depends(require_admin)):
     return {"items": submission_store.list_submissions()}
+
+
+@app.get("/api/submissions/{sid}/rows")
+def get_submission_rows_api(sid: int, _: bool = Depends(require_admin)):
+    rows = submission_store.get_rows(sid)
+    if rows is None:
+        raise HTTPException(404, "저장된 검토표가 없습니다.")
+    return {"rows": rows}
 
 
 @app.post("/api/submissions/{sid}/status")
