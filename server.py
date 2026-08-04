@@ -546,7 +546,7 @@ async def overtime_generate(
     stamp = datetime.now().strftime("%Y%m%d")
     who = (who or "").strip() or "작성완료"
     # 파일명: 소속법인명_초과근무신청서_이름_작성일
-    fname = "_".join(x for x in [company, "초과근무신청서", who, stamp] if x) + ".xlsx"
+    fname = "_".join(x for x in [company, "초과근무수당신청서", who, stamp] if x) + ".xlsx"
     return _download(buf.getvalue(), fname, XLSX_MIME, count=n)
 
 
