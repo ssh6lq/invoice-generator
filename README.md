@@ -39,6 +39,8 @@ pip install -r requirements-server.txt
 | `RECEIPT_BASE_URL` | `http://192.168.1.51:8000` | 로컬 서버 모드일 때 OpenAI 호환 엔드포인트 주소 |
 | `RECEIPT_MODEL` | `vllm-qwen` | 사용할 모델명 |
 | `RECEIPT_API_KEY` / `RECEIPT_BEARER` / `OPENAI_API_KEY` | (없음) | 인증 토큰. 이 순서로 먼저 설정된 값을 사용 |
+| `RECEIPT_CONCURRENCY` | `4` | 영수증을 동시에 분석할 최대 장수. 올리면 여러 장 업로드가 빨라지지만 모델 서버 부하가 커집니다(모델 서버가 감당 못 하면 오히려 느려지거나 실패). |
+| `TZ` | `Asia/Seoul` | 로그·파일명·기록 시각의 시간대. 도커 이미지에 이미 설정돼 있습니다. |
 
 ## 서버 실행
 

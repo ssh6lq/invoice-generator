@@ -17,6 +17,7 @@ import json
 import logging
 import secrets
 import traceback
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
 # 앱 로그는 uvicorn 로거로 남긴다 → log_config.json 의 타임스탬프 포맷이 그대로 적용됨.
@@ -70,6 +71,15 @@ ENV_MODEL = os.getenv("RECEIPT_MODEL", "vllm-qwen")
 ENV_API_KEY = (os.getenv("RECEIPT_API_KEY")
                or os.getenv("RECEIPT_BEARER")
                or os.getenv("OPENAI_API_KEY", ""))
+
+# 영수증 여러 장을 동시에 분석할 최대 개수.
+# 순차 처리하면 10장 × 장당 3초 = 30초씩 걸려서 병렬로 보낸다.
+# 다만 무제한으로 던지면 사내 vLLM 서버가 큐잉/OOM 으로 오히려 느려지거나 실패하므로
+# 상한을 둔다. 모델 서버가 넉넉하면 .env 의 RECEIPT_CONCURRENCY 로 올릴 수 있다.
+try:
+    RECEIPT_CONCURRENCY = max(1, int(os.getenv("RECEIPT_CONCURRENCY", "4")))
+except ValueError:
+    RECEIPT_CONCURRENCY = 4
 
 # 문의/이슈 관리자 페이지 보호(HTTP Basic) — .env의 ADMIN_PASSWORD로만 설정한다.
 ADMIN_USER = os.getenv("ADMIN_USER", "admin")
@@ -142,40 +152,68 @@ def _build_receipt_llm(provider, model, api_key, base_url):
     return llm.with_structured_output(Receipt)
 
 
+def _parse_one_receipt(fname, content, llm):
+    """영수증 한 장을 분석해 dict 로 반환. 실패해도 예외를 올리지 않고
+    error 필드에 담아 돌려준다(한 장이 실패해도 나머지는 살린다)."""
+    rec = {"filename": fname, "date": None, "store": None,
+           "amount": None, "time": None, "region": None, "biz_no": None,
+           "biz_name": None, "error": None}
+    try:
+        data_url = _image_to_data_url(content, fname)
+        messages = [
+            SystemMessage(content=SYSTEM_PROMPT),
+            HumanMessage(content=[
+                {"type": "image_url", "image_url": {"url": data_url}},
+                {"type": "text", "text": "이 영수증 이미지를 자세히 보고, 인쇄된 "
+                 "글자를 오타 없이 한 글자도 틀리지 않게 그대로 읽어 정보를 추출해줘. "
+                 "특히 상호명과 금액 숫자를 정확히."},
+            ]),
+        ]
+        r = llm.invoke(messages)
+        store, biz_no, biz_name = resolve_store_biz(r)
+        rec.update(date=r.date, store=store, amount=r.amount,
+                   time=r.time, region=r.region, biz_no=biz_no, biz_name=biz_name)
+        # 추출 결과 로그 — 확정값(거래처/사업자번호) + 모델이 읽은 원본 섹션값까지 남긴다.
+        logger.info(
+            "[영수증분석] %s → 거래처=%r 일자=%s 금액=%s 시각=%s 지역=%r | 비고용=%r/%r "
+            "(가맹점 %r/%r · 판매자 %r/%r · 단일 %r/%r)",
+            fname, store, r.date, r.amount, r.time, r.region, biz_name, biz_no,
+            r.merchant_name, r.merchant_biz_no, r.seller_name, r.seller_biz_no,
+            r.store, r.biz_no,
+        )
+    except Exception as e:  # noqa: BLE001
+        rec["error"] = str(e)
+        logger.warning("[영수증분석] %s → 실패: %s", fname, e)
+    return rec
+
+
 def _parse_receipts(payload, llm):
-    """payload=list[(filename, bytes)] -> list[dict]. 한 장씩 파싱한다."""
-    results = []
-    for fname, content in payload:
-        rec = {"filename": fname, "date": None, "store": None,
-               "amount": None, "time": None, "region": None, "biz_no": None,
-               "biz_name": None, "error": None}
-        try:
-            data_url = _image_to_data_url(content, fname)
-            messages = [
-                SystemMessage(content=SYSTEM_PROMPT),
-                HumanMessage(content=[
-                    {"type": "image_url", "image_url": {"url": data_url}},
-                    {"type": "text", "text": "이 영수증 이미지를 자세히 보고, 인쇄된 "
-                     "글자를 오타 없이 한 글자도 틀리지 않게 그대로 읽어 정보를 추출해줘. "
-                     "특히 상호명과 금액 숫자를 정확히."},
-                ]),
-            ]
-            r = llm.invoke(messages)
-            store, biz_no, biz_name = resolve_store_biz(r)
-            rec.update(date=r.date, store=store, amount=r.amount,
-                       time=r.time, region=r.region, biz_no=biz_no, biz_name=biz_name)
-            # 추출 결과 로그 — 확정값(거래처/사업자번호) + 모델이 읽은 원본 섹션값까지 남긴다.
-            logger.info(
-                "[영수증분석] %s → 거래처=%r 일자=%s 금액=%s 시각=%s 지역=%r | 비고용=%r/%r "
-                "(가맹점 %r/%r · 판매자 %r/%r · 단일 %r/%r)",
-                fname, store, r.date, r.amount, r.time, r.region, biz_name, biz_no,
-                r.merchant_name, r.merchant_biz_no, r.seller_name, r.seller_biz_no,
-                r.store, r.biz_no,
-            )
-        except Exception as e:  # noqa: BLE001
-            rec["error"] = str(e)
-            logger.warning("[영수증분석] %s → 실패: %s", fname, e)
-        results.append(rec)
+    """payload=list[(filename, bytes)] -> list[dict].
+
+    여러 장을 동시에(RECEIPT_CONCURRENCY 개씩) 분석한다. 장당 수 초 걸리는
+    네트워크 대기라, 순차로 돌리면 장수에 그대로 비례해 느려진다.
+    반환 순서는 업로드 순서와 같게 유지한다(프론트가 파일 순서대로 행을 만든다).
+    """
+    if len(payload) <= 1:
+        return [_parse_one_receipt(f, c, llm) for f, c in payload]
+
+    workers = min(RECEIPT_CONCURRENCY, len(payload))
+    results = [None] * len(payload)
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {pool.submit(_parse_one_receipt, f, c, llm): i
+                   for i, (f, c) in enumerate(payload)}
+        for fut in as_completed(futures):
+            i = futures[fut]
+            # _parse_one_receipt 는 자체적으로 예외를 삼키지만, 만에 하나
+            # 그 바깥에서 터져도 해당 장만 실패로 남기고 나머지는 살린다.
+            try:
+                results[i] = fut.result()
+            except Exception as e:  # noqa: BLE001
+                fname = payload[i][0]
+                logger.warning("[영수증분석] %s → 실패: %s", fname, e)
+                results[i] = {"filename": fname, "date": None, "store": None,
+                              "amount": None, "time": None, "region": None,
+                              "biz_no": None, "biz_name": None, "error": str(e)}
     return results
 
 
