@@ -32,6 +32,10 @@ from fastapi import Depends, FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
+# async def 핸들러 안에서 무거운 동기 작업(엑셀 파싱·생성, LLM 호출)을 그냥 부르면
+# 이벤트 루프가 그 시간만큼 통째로 멈춰, 동시 접속자의 모든 요청이 줄서서 대기한다.
+# run_in_threadpool 로 워커 스레드에 넘겨 루프가 계속 다른 요청을 받게 한다.
+from starlette.concurrency import run_in_threadpool
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -246,10 +250,11 @@ async def expense_options(template: UploadFile = File(None)):
     if tpl is None:
         return {"purpose": [], "payment": [], "limits": {}, "meal": [],
                 "note_examples": {}, "template_name": None, "is_default": True}
+    def _read_options():   # 양식 3회 파싱 — 스레드풀에서 한 번에 처리
+        return (get_dropdown_options(tpl), get_support_limits(tpl),
+                get_note_examples(tpl))
     try:
-        opts = get_dropdown_options(tpl)
-        limits = get_support_limits(tpl)
-        note_examples = get_note_examples(tpl)
+        opts, limits, note_examples = await run_in_threadpool(_read_options)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(500, f"양식을 읽지 못했습니다: {e}")
     return {
@@ -284,7 +289,8 @@ async def expense_analyze(
             provider or ENV_PROVIDER, model or ENV_MODEL,
             api_key or ENV_API_KEY, base_url or ENV_BASE_URL,
         )
-        results = _parse_receipts(payload, llm)
+        # LLM 호출은 장당 수 초씩 걸리는 동기 작업이라 반드시 스레드풀로 넘긴다.
+        results = await run_in_threadpool(_parse_receipts, payload, llm)
     except Exception as e:  # noqa: BLE001
         traceback.print_exc()   # 서버 터미널에 전체 원인 출력
         raise HTTPException(500, f"분석 실패: {type(e).__name__}: {e}")
@@ -353,7 +359,9 @@ async def expense_review(
                           DEFAULT_EXPENSE_TPL)
     if tpl is None:
         raise HTTPException(400, "양식을 찾지 못했습니다.")
-    rows, basic, records, norm, limits = _prepare_expense(data, tpl)
+    # _prepare_expense 는 양식(.xlsm)을 열어 한도표를 읽는다 → 스레드풀로.
+    rows, basic, records, norm, limits = await run_in_threadpool(
+        _prepare_expense, data, tpl)
     if not rows:
         raise HTTPException(400, "검토할 데이터가 없습니다.")
 
@@ -389,7 +397,8 @@ async def expense_generate(
                           DEFAULT_EXPENSE_TPL)
     if tpl is None:
         raise HTTPException(400, "양식을 찾지 못했습니다.")
-    rows, basic, records, norm, limits = _prepare_expense(data, tpl)
+    rows, basic, records, norm, limits = await run_in_threadpool(
+        _prepare_expense, data, tpl)
     if not rows:
         raise HTTPException(400, "채울 데이터가 없습니다.")
 
@@ -409,11 +418,12 @@ async def expense_generate(
     try:
         if fmt == "xlsm":
             # 작성시트를 채운 원본 양식(.xlsm) — 사용자가 Excel에서 매크로를 직접 실행하는 버전
-            buf, _start, n = fill_workbook(tpl, records, append=False,
-                                           basic_info=basic_info)
+            buf, _start, n = await run_in_threadpool(
+                fill_workbook, tpl, records, append=False, basic_info=basic_info)
             return _download(buf.getvalue(), f"{base}.xlsm", XLSM_MIME, count=n)
         ordered = sort_for_claim(norm)
-        buf, n = build_claim_xlsx(tpl, ordered, basic_info=basic_info)
+        buf, n = await run_in_threadpool(
+            build_claim_xlsx, tpl, ordered, basic_info=basic_info)
         fname = f"{base}.xlsx"
         # '제출용' 다운로드 = 실제 제출 행위로 간주해 경영지원팀 관리자 페이지에 기록한다.
         # 이때 매크로검토(정렬·매핑) 완료된 최종 표도 함께 보관해 관리자 페이지에서 조회할 수 있게 한다.
@@ -443,8 +453,10 @@ async def expense_generate(
 @app.post("/api/overtime/parse")
 async def overtime_parse(attendance: UploadFile = File(...)):
     """근태현황(.xlsx)을 읽어 초과근무 대상일 목록을 반환한다."""
+    att = await attendance.read()
     try:
-        name, year, month, records, unapproved_h = parse_attendance(await attendance.read())
+        name, year, month, records, unapproved_h = await run_in_threadpool(
+            parse_attendance, att)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(400, f"근태현황을 읽지 못했습니다: {e}")
     rows = [{
@@ -487,12 +499,14 @@ async def overtime_generate(
         raise HTTPException(400, "양식을 찾지 못했습니다.")
     att = await attendance.read()
     try:
-        buf, n = fill_overtime(tpl, att, extras=extras,
-                               dept_position=dept_position)
+        # 이름(who)은 fill_overtime 이 내부 파싱 결과로 함께 돌려준다.
+        # (따로 parse_attendance 를 부르면 같은 엑셀을 두 번 파싱하게 된다.)
+        buf, n, who = await run_in_threadpool(
+            fill_overtime, tpl, att, extras=extras, dept_position=dept_position)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(500, f"생성 실패: {e}")
     stamp = datetime.now().strftime("%Y%m%d")
-    who = (parse_attendance(att)[0] or "").strip() or "작성완료"
+    who = (who or "").strip() or "작성완료"
     # 파일명: 소속법인명_초과근무신청서_이름_작성일
     fname = "_".join(x for x in [company, "초과근무신청서", who, stamp] if x) + ".xlsx"
     return _download(buf.getvalue(), fname, XLSX_MIME, count=n)
