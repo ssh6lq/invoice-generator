@@ -29,7 +29,7 @@ st.set_page_config(page_title="청구서 자동 작성", page_icon="🧾", layou
 # 번들 기본 양식 (사용자가 따로 업로드하지 않으면 이 파일을 사용)
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_EXPENSE_TPL = os.path.join(APP_DIR, "비용청구양식.xlsm")
-DEFAULT_OVERTIME_TPL = os.path.join(APP_DIR, "초과근무(수당)신청서_양식.xlsx")
+DEFAULT_OVERTIME_TPL = os.path.join(APP_DIR, "소속법인명_초과근무수당신청서_홍길동_20260000.xlsx")
 
 
 def _supports_custom_temperature(model: str) -> bool:
@@ -1247,7 +1247,7 @@ def render_overtime():
             tpl_file = st.file_uploader(
                 "초과근무(수당)신청서 양식(.xlsx)", type=["xlsx"],
                 label_visibility="collapsed",
-                help="비워두면 기본 제공 양식(초과근무(수당)신청서_양식.xlsx)을 자동으로 사용합니다.",
+                help="비워두면 기본 제공 양식(소속법인명_초과근무수당신청서_홍길동_20260000.xlsx)을 자동으로 사용합니다.",
             )
         tpl_bytes, tpl_name, tpl_is_default = _template_bytes_name(
             tpl_file, DEFAULT_OVERTIME_TPL)
@@ -1256,8 +1256,8 @@ def render_overtime():
         elif tpl_bytes is None:
             st.caption("⚠️ 기본 양식을 찾지 못했습니다. ‘양식 변경’에서 업로드하세요.")
         st.divider()
-        st.caption("규칙: 근무시작 = 출근시간 + 9시간(정규8h+점심1h), "
-                   "근무종료 = 퇴근시간. 근무시간·신청시간은 양식 수식이 자동 계산.")
+        st.caption("규칙: 실 근무시작 = 출근시간 + 9시간(정규8h+점심1h), "
+                   "실 근무종료 = 근무시작 + 승인 초과시간. 신청시간은 양식 수식이 자동 계산.")
 
     # ---- 1. 근태 미리보기 ------------------------------------------------
     inject_dropzone_css(

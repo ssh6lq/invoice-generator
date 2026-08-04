@@ -1,6 +1,6 @@
 // ===== 상태 =====
 let OPTIONS = { purpose: [], payment: [], limits: {}, meal: [], note_examples: {} };
-let CONFIG = { expense_template: "비용청구양식.xlsm", overtime_template: "초과근무(수당)신청서_양식.xlsx" };
+let CONFIG = { expense_template: "비용청구양식.xlsm", overtime_template: "소속법인명_초과근무수당신청서_홍길동_20260000.xlsx" };
 let rcptFiles = [];           // File[]
 let analyzedNames = new Set();
 let rcptRows = [];

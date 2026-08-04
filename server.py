@@ -50,7 +50,7 @@ import submission_store
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_EXPENSE_TPL = os.path.join(APP_DIR, "비용청구양식.xlsm")
-DEFAULT_OVERTIME_TPL = os.path.join(APP_DIR, "초과근무(수당)신청서_양식.xlsx")
+DEFAULT_OVERTIME_TPL = os.path.join(APP_DIR, "소속법인명_초과근무수당신청서_홍길동_20260000.xlsx")
 STATIC_DIR = os.path.join(APP_DIR, "static")
 
 XLSM_MIME = "application/vnd.ms-excel.sheet.macroEnabled.12"

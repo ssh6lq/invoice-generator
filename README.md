@@ -15,7 +15,7 @@
 | `feedback_store.py` | 문의/이슈 SQLite 저장소 (`feedback.db`) |
 | `submission_store.py` | 청구서 제출내역 SQLite 저장소 (`submissions.db`) — 제출 시 매크로검토 최종 표도 함께 보관 |
 | `static/` | 프론트엔드 (index.html·app.js = 사용자 화면, admin_*.html/js = 관리자 화면) |
-| `비용청구양식.xlsm` / `초과근무(수당)신청서_양식.xlsx` | 기본 양식 파일 |
+| `비용청구양식.xlsm` / `소속법인명_초과근무수당신청서_홍길동_20260000.xlsx` | 기본 양식 파일 (구양식 `초과근무(수당)신청서_양식.xlsx`도 자동 인식) |
 | `requirements-server.txt` | `server.py` 실행에 필요한 최소 의존성 (Docker 이미지용) |
 | `requirements.txt` | 구버전 Streamlit(`app.py`)용 의존성 |
 

@@ -4,19 +4,25 @@ overtime_filler.py
 
 규칙 (사용자 지정)
   - 포함 대상: '승인 초과 근로시간' > 0 인 날만.
-  - 근무시작(I) = 출근시간 + 9시간   (표준근무 8h + 점심 1h)
+  - 근무시작 = 출근시간 + 9시간   (표준근무 8h + 점심 1h)
                   예) 08:00 출근 -> 17:00, 09:12 출근 -> 18:12
                   단, 08:00 이전 조기출근은 08:00부터 근무한 것으로 보아
                   근무시작을 17:00로 노출한다. 예) 06:43 출근 -> 17:00
                   (출근 원본값은 그대로 두고, 근무시작 기준만 08:00로 하한)
-  - 근무종료(J) = 퇴근시간
-  - 근무시간(K) = 양식 수식이 J-I 로 자동 계산 (0.5시간 단위)
-  - 실 근무시작(L) = 근무시작(I), 실 근무종료(M) = 근무종료(J)
+  - 근무종료 = 퇴근시간
+  - 실 근무시작 = 근무시작, 실 근무종료 = 근무종료
+
+★ 양식 두 종류 지원 ★
+  - 구양식(초과근무(수당)신청서_양식.xlsx): 근무내용(D:F)·신청일(G)·신청구분(H)·
+    근무시작(I)·근무종료(J)·근무시간(K) 열이 있고, 실근무시작이 L열부터 시작.
+  - 신양식(소속법인명_초과근무수당신청서_홍길동_20260000.xlsx): 위 D~K 열이 삭제되어
+    실근무시작이 D열부터 시작(8칸 왼쪽 이동). 근무시작/근무종료/근무시간 열 자체가 없다.
+  헤더행(15행) 라벨을 읽어 열 위치를 자동 판별하므로 어느 양식이든 동작한다.
 
 ★ 도형 보존 ★
 양식에는 결재칸 등 도형/VML 이 있어, openpyxl 재저장 시 사라진다.
 그래서 .xlsx 를 zip 으로 열어 시트 XML 의 대상 셀 값만 직접 교체한다.
-근무시간(K)·신청시간(S) 등 수식과 날짜 자동생성(C2 기반)은 그대로 둔다.
+신청시간 등 수식과 날짜 자동생성(C2 기반)은 그대로 둔다.
 """
 
 import re
@@ -164,6 +170,79 @@ def _find_unapproved_ot_column(ws, header_row):
     return 21 if ws.max_column >= 21 else None  # U열(21) 폴백
 
 
+# ------------------------------------------------------------- 신청서 열 판별
+FORM_HEADER_ROW = 15        # 신청서 표 헤더 행
+FORM_FIRST_DATA_ROW = 17    # 1일 = 17행 (day -> 16 + day)
+
+# 헤더 라벨 -> 내부 키. 라벨의 줄바꿈/공백은 제거하고 비교한다.
+_FORM_HEADER_KEYS = {
+    "근무시작": "work_start",
+    "근무종료": "work_end",
+    "근무시간": "work_hours",
+    "실근무시작": "real_start",
+    "실근무종료": "real_end",
+    "제외할시간(비근무시간)": "exclude",
+    "제외할시간": "exclude",
+    "제외사유": "exclude_reason",
+    "대체휴무지급여부": "payoff",
+    "대체휴무시간": "payoff_hours",
+    "비고": "note",
+    "신청시간": "claim",
+    "지급시간": "paid",
+}
+
+# 열 판별 실패 시 폴백 (구양식 기준)
+_LEGACY_FORM_COLS = {
+    "work_start": "I", "work_end": "J", "work_hours": "K",
+    "real_start": "L", "real_end": "M",
+    "exclude": "N", "exclude_reason": "O",
+    "payoff": "P", "payoff_hours": "Q", "note": "R",
+    "claim": "S", "paid": "T",
+}
+_LEGACY_TOTAL_CELLS = ("S12", "T12")   # 초과근무수당 합계(신청/지급)
+
+
+def _norm_header(v):
+    """헤더 라벨 정규화: 줄바꿈·공백 제거. '제외할 시간\\n(비근무시간)' -> '제외할시간(비근무시간)'"""
+    return re.sub(r"\s+", "", str(v or ""))
+
+
+def detect_form_layout(template_path_or_bytes):
+    """신청서 양식의 헤더행(15행)을 읽어 {키: 열문자} 와 합계셀 좌표를 판별한다.
+
+    반환: (cols: dict[str,str], total_cells: (신청합계, 지급합계))
+      cols 에는 그 양식에 존재하는 열만 담긴다.
+      (신양식은 work_start/work_end/work_hours 가 없어 키 자체가 빠진다.)
+    합계셀: '초과근무수당 합계' 라벨 아래 '신청'/'지급' 셀의 12행 좌표.
+      구양식 S12/T12, 신양식 P12/Q12.
+    """
+    raw = _read_bytes(template_path_or_bytes)
+    wb = openpyxl.load_workbook(BytesIO(raw), read_only=True)
+    try:
+        ws = wb[FORM_SHEET] if FORM_SHEET in wb.sheetnames else wb.worksheets[0]
+        cols, total = {}, {}
+        for row in ws.iter_rows(min_row=11, max_row=FORM_HEADER_ROW):
+            for cell in row:
+                label = _norm_header(cell.value)
+                if not label:
+                    continue
+                if cell.row == FORM_HEADER_ROW:
+                    key = _FORM_HEADER_KEYS.get(label)
+                    if key and key not in cols:
+                        cols[key] = cell.column_letter
+                elif cell.row == 11 and label in ("신청", "지급"):
+                    # 합계 행(12행)은 수식이라 라벨이 없다. 바로 위 11행의 '신청'/'지급'로 찾는다.
+                    total.setdefault(label, cell.column_letter)
+    finally:
+        wb.close()
+
+    if "real_start" not in cols or "claim" not in cols:
+        return dict(_LEGACY_FORM_COLS), _LEGACY_TOTAL_CELLS
+    total_cells = (f"{total['신청']}12", f"{total['지급']}12") \
+        if ("신청" in total and "지급" in total) else _LEGACY_TOTAL_CELLS
+    return cols, total_cells
+
+
 # ---------------------------------------------------------------- 근태 읽기
 def parse_attendance(src_path_or_bytes):
     """
@@ -256,6 +335,8 @@ def fill_overtime(template_path_or_bytes, attendance_path_or_bytes,
     month = month or a_month
 
     raw = _read_bytes(template_path_or_bytes)
+    # 양식 종류(구/신)에 따라 열 위치가 다르므로 헤더행에서 판별한다.
+    cols, (total_claim_cell, total_paid_cell) = detect_form_layout(raw)
     zin = zipfile.ZipFile(BytesIO(raw))
     sheet_path = _sheet_path_for(zin, FORM_SHEET)
     xml = zin.read(sheet_path).decode("utf-8")
@@ -307,62 +388,67 @@ def fill_overtime(template_path_or_bytes, attendance_path_or_bytes,
             # 실근무종료(M)=근무시작+승인+미승인 → 양식 수식 S = (승인+미승인) - 제외 - 대체휴무.
             claim_sec = ot_sec + un_sec
             m_sec = i_sec + ot_sec + un_sec
-        xml = _set_cell(xml, f"I{r}", "num", repr(_fraction(i_sec)))   # 근무시작(표시)
-        xml = _set_cell(xml, f"J{r}", "num", repr(_fraction(j_sec)))   # 근무종료(표시=퇴근)
-        xml = _set_cell(xml, f"L{r}", "num", repr(_fraction(i_sec)))   # 실 근무시작
-        xml = _set_cell(xml, f"M{r}", "num", repr(_fraction(m_sec)))   # 실 근무종료 = 근무시작+승인초과
+        # 근무시작/근무종료(표시용)는 구양식에만 있는 열이라, 있을 때만 채운다.
+        if "work_start" in cols:
+            xml = _set_cell(xml, f"{cols['work_start']}{r}", "num", repr(_fraction(i_sec)))
+        if "work_end" in cols:
+            xml = _set_cell(xml, f"{cols['work_end']}{r}", "num", repr(_fraction(j_sec)))
+        xml = _set_cell(xml, f"{cols['real_start']}{r}", "num", repr(_fraction(i_sec)))  # 실 근무시작
+        xml = _set_cell(xml, f"{cols['real_end']}{r}", "num", repr(_fraction(m_sec)))    # 실 근무종료 = 근무시작+승인초과
 
-        # 사용자가 표에서 고른 값: 대체휴무지급(P)·대체휴무시간(Q)·비고(R)
-        # 신청시간(S) 수식 = ROUNDDOWN(MAX(0,(근무시간) - N - Q)*2)/2 이고,
-        # P 가 안내문('입력하세요')이면 숫자 대신 안내문이 나온다.
-        #   X(대체휴무 미지급) -> P="X", Q 비움  -> 근무시간 전체가 신청시간에 기록
-        #   O(대체휴무 지급)   -> P="O", Q=대체휴무시간 -> 그만큼 신청시간에서 차감
+        # 사용자가 표에서 고른 값: 대체휴무지급·대체휴무시간·비고
+        # 신청시간 수식 = ROUNDDOWN(MAX(0,(실근무종료-실근무시작)*24 - 제외 - 대체휴무)*2)/2 이고,
+        # 대체휴무지급여부가 안내문('입력하세요')이면 숫자 대신 안내문이 나온다.
+        #   X(대체휴무 미지급) -> "X", 시간 비움  -> 근무시간 전체가 신청시간에 기록
+        #   O(대체휴무 지급)   -> "O", 대체휴무시간 -> 그만큼 신청시간에서 차감
         ex = extras.get(day) or {}
         payoff = str(ex.get("payoff", "") or "").strip().upper()
         if payoff not in ("O", "X"):
             payoff = "X"  # 기본: 대체휴무 미지급 → 전체 신청
-        xml = _set_cell(xml, f"P{r}", "str", payoff)
+        xml = _set_cell(xml, f"{cols['payoff']}{r}", "str", payoff)
 
-        # 대체휴무 시간(Q) — 시간 단위 숫자로 기록(양식 수식이 그대로 빼므로).
+        # 대체휴무 시간 — 시간 단위 숫자로 기록(양식 수식이 그대로 빼므로).
         hours = str(ex.get("hours", "") or "").strip()
         q_val = 0.0
         if payoff == "O" and hours:
             q_val = _to_hours(hours)
-            xml = _set_cell(xml, f"Q{r}", "num", _nf(q_val))
+            xml = _set_cell(xml, f"{cols['payoff_hours']}{r}", "num", _nf(q_val))
         else:
-            xml = _set_cell(xml, f"Q{r}", "str", "")  # 비움 → 수식이 0으로 처리
+            xml = _set_cell(xml, f"{cols['payoff_hours']}{r}", "str", "")  # 비움 → 수식이 0으로 처리
 
-        # 제외할 시간(N)·제외 사유(O) — 사용자가 입력하면 신청시간에서 차감.
+        # 제외할 시간·제외 사유 — 사용자가 입력하면 신청시간에서 차감.
         exclude = str(ex.get("exclude", "") or "").strip()
         n_val = _to_hours(exclude)
         if n_val > 0:
-            xml = _set_cell(xml, f"N{r}", "num", _nf(n_val))
+            xml = _set_cell(xml, f"{cols['exclude']}{r}", "num", _nf(n_val))
         else:
-            xml = _set_cell(xml, f"N{r}", "str", "")
+            xml = _set_cell(xml, f"{cols['exclude']}{r}", "str", "")
         reason = str(ex.get("exclude_reason", "") or "").strip()
-        xml = _set_cell(xml, f"O{r}", "str", reason)
+        xml = _set_cell(xml, f"{cols['exclude_reason']}{r}", "str", reason)
 
         note = str(ex.get("note", "") or "").strip()
         if note:
-            xml = _set_cell(xml, f"R{r}", "str", note)
+            xml = _set_cell(xml, f"{cols['note']}{r}", "str", note)
 
-        # 수식 결과(근무시간 K·신청시간 S·지급시간 T)를 양식 수식과 똑같이 미리 계산해
+        # 수식 결과(근무시간·신청시간·지급시간)를 양식 수식과 똑같이 미리 계산해
         # 캐시값으로 넣는다. 제한된 보기에서도 0 대신 실제 값이 보인다.
         eps = 1e-9
-        frac = (j_sec - i_sec) / DAY_SECONDS          # K(근무시간): MOD(J-I,1) = 퇴근-근무시작
-        mod1 = frac - math.floor(frac)
-        k_val = math.floor(mod1 * 24 * 2 + eps) / 2   # 근무시간(0.5h 단위)
-        # S(신청시간): (M-L)*24 - N - Q = (조기출근이면 퇴근-근무시작, 아니면 승인초과) - 제외 - 대체휴무
+        # 신청시간: (실근무종료-실근무시작)*24 - 제외 - 대체휴무
+        #          = (조기출근이면 퇴근-근무시작, 아니면 승인초과) - 제외 - 대체휴무
         base = max(0.0, claim_sec / 3600.0 - n_val - q_val)
         s_val = math.floor(base * 2 + eps) / 2
         total_s += s_val
-        xml = _set_formula_cache(xml, f"K{r}", _nf(k_val))
-        xml = _set_formula_cache(xml, f"S{r}", _nf(s_val))   # 신청시간
-        xml = _set_formula_cache(xml, f"T{r}", _nf(s_val))   # 지급시간(=신청시간)
+        if "work_hours" in cols:   # 근무시간 열은 구양식에만 있다: MOD(종료-시작,1)*24
+            frac = (j_sec - i_sec) / DAY_SECONDS
+            mod1 = frac - math.floor(frac)
+            k_val = math.floor(mod1 * 24 * 2 + eps) / 2   # 근무시간(0.5h 단위)
+            xml = _set_formula_cache(xml, f"{cols['work_hours']}{r}", _nf(k_val))
+        xml = _set_formula_cache(xml, f"{cols['claim']}{r}", _nf(s_val))  # 신청시간
+        xml = _set_formula_cache(xml, f"{cols['paid']}{r}", _nf(s_val))   # 지급시간(=신청시간)
 
-    # 합계(S12 신청 / T12 지급) 캐시값
-    xml = _set_formula_cache(xml, "S12", _nf(total_s))
-    xml = _set_formula_cache(xml, "T12", _nf(total_s))
+    # 초과근무수당 합계(신청/지급) 캐시값 — 구양식 S12/T12, 신양식 P12/Q12
+    xml = _set_formula_cache(xml, total_claim_cell, _nf(total_s))
+    xml = _set_formula_cache(xml, total_paid_cell, _nf(total_s))
 
     out = BytesIO()
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zout:
@@ -387,7 +473,7 @@ def fill_overtime(template_path_or_bytes, attendance_path_or_bytes,
 if __name__ == "__main__":
     import sys
     att = sys.argv[1] if len(sys.argv) > 1 else "남소희_월간근태현황_202605.xlsx"
-    tpl = sys.argv[2] if len(sys.argv) > 2 else "초과근무(수당)신청서_양식.xlsx"
+    tpl = sys.argv[2] if len(sys.argv) > 2 else "소속법인명_초과근무수당신청서_홍길동_20260000.xlsx"
     name, year, month, recs, unapproved = parse_attendance(att)
     print(f"이름={name} 연={year} 월={month} 대상일수={len(recs)} 미승인합계(시간)={unapproved}")
     for rc in recs:
