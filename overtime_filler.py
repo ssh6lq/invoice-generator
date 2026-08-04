@@ -321,9 +321,13 @@ def parse_attendance(src_path_or_bytes):
 def fill_overtime(template_path_or_bytes, attendance_path_or_bytes,
                   name=None, month=None, extras=None, dept_position=None):
     """
-    근태현황을 읽어 초과근무신청서 양식을 채워 (BytesIO, count) 반환.
+    근태현황을 읽어 초과근무신청서 양식을 채워 (BytesIO, count, name) 반환.
     name/month 를 직접 주면 근태 파일 값보다 우선한다.
     dept_position 을 주면 '부서명 / 직위' 칸(D7)에 채운다.
+
+    ※ name 을 함께 돌려주는 이유: 호출부에서 파일명에 쓸 이름을 얻으려고
+      parse_attendance() 를 또 부르면 같은 엑셀을 두 번 파싱하게 된다.
+      여기서 이미 파싱했으니 그대로 내보내 중복 파싱을 없앤다.
 
     extras: dict[int day] -> {"payoff": "O"/"X", "hours": "HH:MM"|숫자, "note": str}
             사용자가 표에서 고른 대체휴무지급(P)·대체휴무시간(Q)·비고(R) 값.
@@ -467,7 +471,7 @@ def fill_overtime(template_path_or_bytes, attendance_path_or_bytes,
             zout.writestr(zi, data)
     zin.close()
     out.seek(0)
-    return out, len(records)
+    return out, len(records), name
 
 
 if __name__ == "__main__":
@@ -478,7 +482,7 @@ if __name__ == "__main__":
     print(f"이름={name} 연={year} 월={month} 대상일수={len(recs)} 미승인합계(시간)={unapproved}")
     for rc in recs:
         print(rc)
-    buf, n = fill_overtime(tpl, att)
+    buf, n, who = fill_overtime(tpl, att)
     with open("test_overtime.xlsx", "wb") as f:
         f.write(buf.read())
-    print(f"채움 완료: {n}건 -> test_overtime.xlsx")
+    print(f"채움 완료: {who} {n}건 -> test_overtime.xlsx")

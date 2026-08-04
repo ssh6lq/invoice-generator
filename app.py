@@ -1367,8 +1367,8 @@ def render_overtime():
             parts = [p for p in (ot_dept.strip(), ot_pos.strip()) if p]
             dept_position = " / ".join(parts) if parts else None
             try:
-                buf, n = fill_overtime(tpl_bytes, att_file.getvalue(),
-                                       extras=extras, dept_position=dept_position)
+                buf, n, _who = fill_overtime(tpl_bytes, att_file.getvalue(),
+                                             extras=extras, dept_position=dept_position)
             except Exception as e:  # noqa: BLE001
                 st.error(f"생성에 실패했습니다: {e}")
                 return
