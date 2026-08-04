@@ -300,7 +300,10 @@ async function printReceipts() {
 // 각 셀 width를 페이지 폭 대비 %로 주어 인쇄 폭에 맞게 자동 스케일된다.
 function buildReceiptSheetHTML(items) {
   const CW = 1000;            // 가상 페이지 폭(비율 계산용)
-  const TARGET_H = CW * 0.5;  // 목표 행 높이(≈페이지 폭의 절반). 크게 하면 영수증이 커짐.
+  // 목표 행 높이. 값이 클수록 한 행에 들어가는 영수증 수가 줄어 각 영수증이 커진다.
+  // (0.85 → 한 행에 대략 2~3장, 넘치면 자동으로 다음 페이지로 나뉜다.)
+  // A4 인쇄 영역 높이(≈페이지 폭×1.45)보다 작게 두어 한 행이 잘리지 않게 한다.
+  const TARGET_H = CW * 0.85;
   const GAP_PCT = 1.2;        // 셀 사이 간격(페이지 폭 대비 %)
   const GAP = GAP_PCT / 100 * CW;
 
