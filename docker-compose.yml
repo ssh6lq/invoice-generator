@@ -7,6 +7,9 @@ services:
       - "2200:8000"          # 호스트8000 → 컨테이너8000
     env_file:
       - .env                 # 환경변수(.env)에서 읽어옴 (없으면 기본값 동작)
+    environment:
+      # 로그·파일명·DB 기록 시각을 한국시간으로 (미지정 시 컨테이너 기본값 UTC)
+      - TZ=Asia/Seoul
     volumes:
       # SQLite 데이터 유지: 컨테이너를 지워도 문의/제출 내역이 남도록
       - ./data/feedback.db:/app/feedback.db

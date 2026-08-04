@@ -2,9 +2,16 @@
 FROM python:3.11-slim
 
 # 파이썬 로그가 버퍼링 없이 바로 나오도록
+# TZ: 컨테이너 기본 시간대는 UTC라 로그·파일명·DB 기록 시각이 한국시간보다 9시간 빠르다.
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    TZ=Asia/Seoul
+
+# slim 이미지에는 시간대 DB가 없어서 TZ 만 지정하면 무시된다 → tzdata 설치 후 적용
+RUN apt-get update && apt-get install -y --no-install-recommends tzdata \
+    && ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 

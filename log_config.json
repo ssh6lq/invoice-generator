@@ -3,15 +3,15 @@
   "disable_existing_loggers": false,
   "formatters": {
     "default": {
-      "()": "uvicorn.logging.DefaultFormatter",
+      "()": "log_tz.KSTDefaultFormatter",
       "fmt": "%(asctime)s %(levelprefix)s %(message)s",
-      "datefmt": "%Y-%m-%d %H:%M:%S",
+      "datefmt": "%Y-%m-%d %H:%M:%S KST",
       "use_colors": null
     },
     "access": {
-      "()": "uvicorn.logging.AccessFormatter",
+      "()": "log_tz.KSTAccessFormatter",
       "fmt": "%(asctime)s %(levelprefix)s %(client_addr)s - \"%(request_line)s\" %(status_code)s",
-      "datefmt": "%Y-%m-%d %H:%M:%S",
+      "datefmt": "%Y-%m-%d %H:%M:%S KST",
       "use_colors": null
     }
   },
