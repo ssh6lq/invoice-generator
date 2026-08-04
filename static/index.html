@@ -132,7 +132,6 @@
             <div id="rcptUploadNote"></div>
             <div class="files-head hidden" id="rcptFilesHead">
               <span class="cnt" id="rcptFilesCnt"></span>
-              <button type="button" class="clr" id="printRcptBtn" onclick="printReceipts()" title="첨부한 영수증들을 비율대로 잘림 없이 배치한 인쇄 화면을 엽니다. '대상: PDF로 저장'으로 PDF도 만들 수 있어요.">🖨️ 영수증 프린트</button>
               <button type="button" class="clr" onclick="clearRcptFiles()">전체 삭제</button>
             </div>
             <div class="files" id="rcptFiles"></div>
@@ -147,7 +146,10 @@
             <p class="step-desc">영수증의 날짜·사용처·금액을 자동으로 추출합니다.</p>
             <div class="btn-row">
               <button class="btn primary" id="analyzeBtn" onclick="analyze()" disabled>영수증 분석 (0장)</button>
-              <button class="btn ghost" id="resetListBtn" onclick="resetList()" style="flex:0 0 140px;" disabled>🗑️ 목록 초기화</button>
+            </div>
+            <div class="btn-row sub hidden" id="rcptActionRow">
+              <button class="btn ghost" id="printRcptBtn" onclick="printReceipts()" title="첨부한 영수증들을 비율대로 잘림 없이 배치한 인쇄 화면을 엽니다. '대상: PDF로 저장'으로 PDF도 만들 수 있어요.">🖨️ 영수증 프린트</button>
+              <button class="btn ghost" id="resetListBtn" onclick="resetList()">🗑️ 목록 초기화</button>
             </div>
             <div id="analyzeNote"></div>
           </div>

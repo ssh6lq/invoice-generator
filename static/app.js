@@ -236,6 +236,10 @@ function updateAnalyzeBtn() {
   const p = pendingFiles().length;
   const btn = $("analyzeBtn"); btn.disabled = p === 0; btn.innerHTML = `영수증 분석 (${p}장)`;
   $("resetListBtn").disabled = rcptRows.length === 0;
+  $("printRcptBtn").disabled = rcptFiles.length === 0;   // 첨부한 사진이 있으면 프린트 가능
+  // 프린트·초기화 줄은 분석이 완료돼(또는 직접 입력해) 목록이 생긴 뒤에만 노출한다.
+  const hasList = analyzedNames.size > 0 || rcptRows.some((r) => r.store || r.date || r.amount);
+  $("rcptActionRow").classList.toggle("hidden", !hasList);
 }
 
 // ===== 미리보기 =====
@@ -279,13 +283,24 @@ async function printReceipts() {
   const btn = $("printRcptBtn");
   if (btn) btn.disabled = true;
   try {
-    // 원본 첨부 순서대로 각 이미지의 실제 가로·세로를 읽는다(비율 계산용).
+    // 분석 결과(rcptRows)에서 파일명 → 영수일시(날짜+시각) 키를 만들어 날짜순 배치에 쓴다.
+    // 분석 안 됐거나 날짜를 못 읽은 사진은 맨 뒤로, 같은 시각이면 첨부 순서를 유지한다.
+    const keyOf = {};
+    for (const r of rcptRows) {
+      if (!r.filename || !r.date) continue;
+      const t = /(\d{1,2})\D(\d{1,2})/.exec(esc(r.time || ""));   // HH:MM (없으면 00:00)
+      const hm = t ? `${t[1].padStart(2, "0")}:${t[2].padStart(2, "0")}` : "00:00";
+      keyOf[r.filename] = `${dateKey(r.date)} ${hm}`;
+    }
     const items = [];
-    for (const f of rcptFiles) {
+    for (let i = 0; i < rcptFiles.length; i++) {
+      const f = rcptFiles[i];
       if (!urlCache[f.name]) urlCache[f.name] = URL.createObjectURL(f);
       const dim = await imgSize(urlCache[f.name]);
-      if (dim) items.push({ url: urlCache[f.name], a: dim.w / dim.h });
+      if (dim) items.push({ url: urlCache[f.name], a: dim.w / dim.h, dk: keyOf[f.name] || "9999-99-99 99:99", i });
     }
+    // 영수일시 오름차순(같은 시각은 첨부 순서) 정렬. 날짜 없는 사진은 맨 뒤로.
+    items.sort((x, y) => x.dk.localeCompare(y.dk) || x.i - y.i);
     if (!items.length) { note($("analyzeNote"), "warn", "이미지를 읽지 못했어요."); return; }
     const w = window.open("", "_blank");
     if (!w) { note($("analyzeNote"), "warn", "팝업이 차단됐어요. 이 사이트의 팝업을 허용한 뒤 다시 시도하세요."); return; }
@@ -322,8 +337,9 @@ function buildReceiptSheetHTML(items) {
     const avail = 100 - totalGap;            // 이미지가 나눠 가질 실폭(%)
     const fillH = (CW - GAP * (n - 1)) / row.sumA;  // 폭을 꽉 채웠을 때 행 높이
     let justify = "space-between", cells;
-    if (row.last && fillH > TARGET_H * 1.5) {
-      // 마지막 덜 찬 행이 과도하게 커지면 목표 높이로 고정하고 왼쪽 정렬.
+    if (row.last && fillH > TARGET_H * 1.05) {
+      // 마지막 덜 찬 행(예: 2장만 있을 때)을 폭 꽉 채워 키우지 않고 목표 높이로 고정, 왼쪽 정렬.
+      // → 영수증이 몇 장뿐이어도 한 장 크기가 일반 행과 같아진다(오른쪽은 여백).
       justify = "flex-start";
       cells = row.items.map((it) =>
         `<div class="cell" style="width:${(TARGET_H * it.a / CW * 100).toFixed(4)}%"><img src="${it.url}"/></div>`).join("");
